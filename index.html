@@ -233,7 +233,7 @@
       <div class="chart-container"><canvas id="dayChart"></canvas></div>
     </div>
     <div class="card p-5">
-      <h3 class="font-semibold text-sm mb-4">Win Rate por Hora de Entrada (UTC)</h3>
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Hora de Entrada (UTC-3)</h3>
       <div class="chart-container"><canvas id="hourChart"></canvas></div>
     </div>
   </div>
@@ -268,7 +268,7 @@
   <!-- ROW 5: Heatmap + LONG vs SHORT -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.25s">
     <div class="card p-5">
-      <h3 class="font-semibold text-sm mb-1">Heatmap: WR por Día × Hora</h3>
+      <h3 class="font-semibold text-sm mb-1">Heatmap: WR por Día × Hora (UTC-3)</h3>
       <p class="text-xs text-[var(--muted)] mb-4">Verde = mayor win rate · Hover para detalles</p>
       <div id="heatmapContainer" class="overflow-x-auto scrollbar-thin"></div>
     </div>
@@ -443,12 +443,20 @@ function parseRow(row) {
   const pips  = parseFloat(row['PIPS'] || row['pips'] || 0) || 0;
   const pct   = parseFloat(row['%']    || row['pct']  || 0) || 0;
 
-  // Hora de entrada
+  // Hora de entrada — ya viene en UTC-3 desde el Apps Script
   let hora = null;
-  const horaRaw = row['HORARIO DE ENTRADA'] || row['hora'] || '';
-  if (horaRaw) {
-    const match = String(horaRaw).match(/(\d{1,2})[:hH]/);
-    if (match) hora = parseInt(match[1]);
+  const horaNum = row['hora'];
+  if (horaNum !== null && horaNum !== undefined && horaNum !== '') {
+    const parsed = parseInt(horaNum);
+    if (!isNaN(parsed)) hora = parsed;
+  }
+  // Fallback: si viene como string "HH:MM:SS"
+  if (hora === null) {
+    const horaRaw = row['HORARIO DE ENTRADA'] || '';
+    if (horaRaw) {
+      const match = String(horaRaw).match(/(\d{1,2})[:hH]/);
+      if (match) hora = parseInt(match[1]);
+    }
   }
 
   // Fecha → year + month
