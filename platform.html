@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARM Platform — Trading Analytics</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0c10;--surface:#111318;--border:#1e2230;--accent:#00d4aa;--sl:#ff4d6d;--accent3:#ffc14d;--text:#e2e8f0;--muted:#64748b;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
+  .mono{font-family:'Space Mono',monospace;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+  .tag{display:inline-flex;align-items:center;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;}
+  .badge-tp{background:rgba(0,212,170,0.12);color:var(--accent);border:1px solid rgba(0,212,170,0.25);}
+  .badge-sl{background:rgba(255,77,109,0.12);color:var(--sl);border:1px solid rgba(255,77,109,0.25);}
+  .badge-neu{background:rgba(255,193,77,0.12);color:var(--accent3);border:1px solid rgba(255,193,77,0.25);}
+  .btn{border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;border:1px solid var(--border);background:transparent;color:var(--muted);}
+  .btn:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-primary{background:var(--accent);color:#0a0c10;border-color:var(--accent);}
+  .btn-primary:hover{opacity:0.85;color:#0a0c10;}
+  .btn-danger{background:rgba(255,77,109,0.1);color:var(--sl);border-color:rgba(255,77,109,0.3);}
+  input,textarea{width:100%;background:#0a0c10;border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;transition:border-color 0.2s;}
+  input:focus,textarea:focus{border-color:var(--accent);}
+  select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;outline:none;}
+  .scrollbar-thin::-webkit-scrollbar{width:4px;height:4px;}
+  .scrollbar-thin::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  .grid-lines{background-image:radial-gradient(circle,#1e2230 1px,transparent 1px);background-size:28px 28px;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .fade-in{animation:fadeIn 0.35s ease both;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  .live-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+  .live-dot.on{background:var(--accent);animation:pulse 2s infinite;}
+  .live-dot.off{background:var(--muted);}
+  /* Pages */
+  .page{display:none;}
+  .page.active{display:block;}
+  /* Spinner */
+  .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* Nav */
+  nav{background:rgba(10,12,16,0.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
+  .stat-val{font-size:1.8rem;font-weight:700;font-family:'Space Mono',monospace;line-height:1;}
+  .stat-label{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);}
+  /* Toast */
+  #toast{position:fixed;bottom:24px;right:24px;z-index:999;display:none;}
+  .toast-inner{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,0.4);}
+  /* DD bar */
+  .dd-bar-bg{background:rgba(255,255,255,0.06);border-radius:99px;height:5px;margin-top:5px;}
+  .dd-bar-fill{height:100%;border-radius:99px;transition:width 0.5s;}
+</style>
+</head>
+<body class="grid-lines">
+
+<!-- TOAST -->
+<div id="toast"><div class="toast-inner" id="toastMsg"></div></div>
+
+<!-- NAV -->
+<nav class="px-6 py-3">
+  <div class="max-w-screen-xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="mono font-bold text-lg">ARM <span class="text-[var(--accent)]">Platform</span></span>
+      <span class="tag badge-tp text-xs hidden" id="navLiveBadge">
+        <span class="live-dot on mr-1"></span> En vivo
+      </span>
+    </div>
+    <div class="flex items-center gap-2" id="navButtons">
+      <button class="btn" onclick="showPage('leaderboard')">🏆 Leaderboard</button>
+      <button class="btn" onclick="showPage('login')">Iniciar sesión</button>
+      <button class="btn btn-primary" onclick="showPage('register')">Registrarse</button>
+    </div>
+    <div class="hidden items-center gap-2" id="navUser">
+      <span class="text-sm text-[var(--muted)]">Hola, <span id="navUsername" class="text-[var(--text)] font-semibold"></span></span>
+      <button class="btn" onclick="showPage('dashboard')">Dashboard</button>
+      <button class="btn" onclick="showPage('settings')">⚙️</button>
+      <button class="btn btn-danger" onclick="logout()">Salir</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════ LANDING ═══════════════════════ -->
+<div id="page-landing" class="page active">
+  <div class="max-w-4xl mx-auto px-6 py-24 text-center fade-in">
+    <div class="tag badge-neu mb-6 mx-auto">MT5 · Cuenta Real · Tiempo Real</div>
+    <h1 class="text-5xl font-bold mono mb-6">Auditá tu trading<br><span class="text-[var(--accent)]">en tiempo real</span></h1>
+    <p class="text-[var(--muted)] text-lg mb-10 max-w-2xl mx-auto">Conectá tu cuenta de MT5, visualizá tus estadísticas reales y compartí tu performance con total transparencia.</p>
+    <div class="flex gap-4 justify-center flex-wrap">
+      <button class="btn btn-primary text-base px-8 py-3" onclick="showPage('register')">Empezar gratis →</button>
+      <button class="btn text-base px-8 py-3" onclick="showPage('leaderboard')">Ver Leaderboard</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20">
+      <div class="card p-6 text-left">
+        <div class="text-3xl mb-3">📊</div>
+        <h3 class="font-semibold mb-2">Estadísticas completas</h3>
+        <p class="text-sm text-[var(--muted)]">WR, Profit Factor, Drawdown, P&L por par, curva de equity y mucho más.</p>
+      </div>
+      <div class="card p-6 text-left">
+        <div class="text-3xl mb-3">🔒</div>
+        <h3 class="font-semibold mb-2">100% privado por defecto</h3>
+        <p class="text-sm text-[var(--muted)]">Solo vos ves tus datos. Hacé tu perfil público cuando quieras.</p>
+      </div>
+      <div class="card p-6 text-left">
+        <div class="text-3xl mb-3">⚡</div>
+        <h3 class="font-semibold mb-2">Actualización automática</h3>
+        <p class="text-sm text-[var(--muted)]">El EA envía datos cada minuto. Tu dashboard siempre actualizado.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ REGISTER ═══════════════════════ -->
+<div id="page-register" class="page">
+  <div class="max-w-md mx-auto px-6 py-16 fade-in">
+    <h2 class="text-2xl font-bold mono mb-2">Crear cuenta</h2>
+    <p class="text-sm text-[var(--muted)] mb-8">Gratis. Sin tarjeta de crédito.</p>
+    <div class="card p-6 space-y-4">
+      <div><label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-1">Usuario</label>
+        <input type="text" id="regUsername" placeholder="tuusuario" autocomplete="off"/></div>
+      <div><label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-1">Email</label>
+        <input type="email" id="regEmail" placeholder="tu@email.com"/></div>
+      <div><label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-1">Contraseña</label>
+        <input type="password" id="regPassword" placeholder="Mínimo 8 caracteres"/></div>
+      <button class="btn btn-primary w-full mt-2" onclick="register()">Crear cuenta →</button>
+      <p class="text-xs text-center text-[var(--muted)]">¿Ya tenés cuenta? <span class="text-[var(--accent)] cursor-pointer" onclick="showPage('login')">Iniciá sesión</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ LOGIN ═══════════════════════ -->
+<div id="page-login" class="page">
+  <div class="max-w-md mx-auto px-6 py-16 fade-in">
+    <h2 class="text-2xl font-bold mono mb-2">Iniciar sesión</h2>
+    <p class="text-sm text-[var(--muted)] mb-8">Bienvenido de vuelta.</p>
+    <div class="card p-6 space-y-4">
+      <div><label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-1">Email</label>
+        <input type="email" id="loginEmail" placeholder="tu@email.com"/></div>
+      <div><label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-1">Contraseña</label>
+        <input type="password" id="loginPassword" onkeydown="if(event.key==='Enter')login()"/></div>
+      <button class="btn btn-primary w-full mt-2" onclick="login()">Iniciar sesión →</button>
+      <p class="text-xs text-center text-[var(--muted)]">¿No tenés cuenta? <span class="text-[var(--accent)] cursor-pointer" onclick="showPage('register')">Registrate</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
+<div id="page-dashboard" class="page">
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between mb-6 fade-in">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <span class="mono text-xs text-[var(--accent)] tracking-widest uppercase">Cuenta Real</span>
+        <span class="live-dot off" id="dashDot"></span>
+        <span class="text-xs text-[var(--muted)]" id="dashStatus">Sin datos</span>
+      </div>
+      <h2 class="text-2xl font-bold mono">Mi Dashboard</h2>
+      <p class="text-xs text-[var(--muted)] mt-1" id="dashBroker">—</p>
+    </div>
+    <div class="flex gap-2">
+      <select id="dashRange" onchange="loadDashboard()">
+        <option value="24h">Últimas 24h</option>
+        <option value="7d" selected>7 días</option>
+        <option value="30d">30 días</option>
+        <option value="all">Todo</option>
+      </select>
+      <button class="btn btn-primary" onclick="loadDashboard()">↻ Actualizar</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-5 fade-in" style="animation-delay:0.05s">
+    <div class="card p-4 col-span-2" style="box-shadow:0 0 20px rgba(0,212,170,0.07)">
+      <div class="stat-label">Balance</div>
+      <div class="stat-val text-[var(--accent)] mt-2 text-2xl" id="d-balance">—</div>
+      <div class="text-xs text-[var(--muted)] mt-1" id="d-currency">USD</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Equity</div>
+      <div class="stat-val mt-2 text-2xl" id="d-equity">—</div>
+      <div class="text-xs mt-1" id="d-floating" style="color:var(--muted)">Flotante: —</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Drawdown</div>
+      <div class="stat-val mt-2 text-2xl" id="d-dd">—</div>
+      <div class="dd-bar-bg"><div class="dd-bar-fill" id="d-dd-bar" style="width:0%"></div></div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Margen Libre</div>
+      <div class="stat-val mt-2 text-2xl" id="d-freemargin">—</div>
+      <div class="text-xs text-[var(--muted)] mt-1" id="d-margin">Usado: —</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-val mt-2 text-2xl" id="d-wr">—</div>
+      <div class="flex gap-1 mt-1"><span class="tag badge-tp text-xs" id="d-wins">—</span><span class="tag badge-sl text-xs" id="d-losses">—</span></div>
+    </div>
+    <div class="card p-4 col-span-2" style="box-shadow:0 0 20px rgba(0,212,170,0.06)">
+      <div class="stat-label">Profit Factor</div>
+      <div class="stat-val mt-2 text-2xl text-[var(--accent)]" id="d-pf">—</div>
+      <div class="text-xs text-[var(--muted)] mt-1">Gain/Loss ratio</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Net P&L</div>
+      <div class="stat-val mt-2 text-2xl" id="d-net">—</div>
+      <div class="text-xs text-[var(--muted)] mt-1">Cerrados + flotante</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Posiciones</div>
+      <div class="stat-val mt-2 text-2xl text-[var(--accent3)]" id="d-open">—</div>
+      <div class="text-xs text-[var(--muted)] mt-1">Abiertas ahora</div>
+    </div>
+  </div>
+
+  <!-- Equity curve + posiciones abiertas -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 fade-in" style="animation-delay:0.1s">
+    <div class="card p-5 lg:col-span-2">
+      <h3 class="font-semibold text-sm mb-4">Equity Curve</h3>
+      <canvas id="equityChart" style="max-height:230px"></canvas>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-3">Posiciones Abiertas</h3>
+      <div class="overflow-auto scrollbar-thin" style="max-height:250px">
+        <table class="w-full text-xs">
+          <thead class="sticky top-0 bg-[var(--surface)]">
+            <tr class="text-[var(--muted)] uppercase tracking-wider">
+              <th class="px-2 py-1 text-left">Par</th><th class="px-2 py-1">Dir</th>
+              <th class="px-2 py-1 text-right">Lots</th><th class="px-2 py-1 text-right">P&L</th>
+            </tr>
+          </thead>
+          <tbody id="d-open-body" class="divide-y divide-[var(--border)]"></tbody>
+        </table>
+      </div>
+      <div class="text-xs text-[var(--muted)] mt-2 flex justify-between">
+        <span id="d-open-summary">—</span>
+        <span id="d-open-total" class="mono font-bold"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 fade-in" style="animation-delay:0.15s">
+    <div class="card p-5"><h3 class="font-semibold text-sm mb-4">P&L por Par</h3><canvas id="pairChart" style="max-height:200px"></canvas></div>
+    <div class="card p-5"><h3 class="font-semibold text-sm mb-4">P&L Mensual</h3><canvas id="monthlyChart" style="max-height:200px"></canvas></div>
+    <div class="card p-5"><h3 class="font-semibold text-sm mb-4">WR por Par</h3><canvas id="wrChart" style="max-height:200px"></canvas></div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.2s">
+    <div class="card p-5"><h3 class="font-semibold text-sm mb-4">P&L Acumulado</h3><canvas id="cumulChart" style="max-height:200px"></canvas></div>
+    <div class="card p-5"><h3 class="font-semibold text-sm mb-4">Distribución Win / Loss</h3><canvas id="distChart" style="max-height:200px"></canvas></div>
+  </div>
+
+  <!-- Historial -->
+  <div class="card p-5 mb-6 fade-in" style="animation-delay:0.25s">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+      <h3 class="font-semibold text-sm">Historial de Trades</h3>
+      <div class="flex gap-2 flex-wrap">
+        <select id="hFilter" onchange="renderHistory()"><option value="ALL">Todos</option><option value="WIN">Ganadores</option><option value="LOSS">Perdedores</option></select>
+        <select id="hSymbol" onchange="renderHistory()"><option value="ALL">Todos los pares</option></select>
+        <select id="hDir" onchange="renderHistory()"><option value="ALL">BUY + SELL</option><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+      </div>
+    </div>
+    <div class="overflow-auto scrollbar-thin rounded-lg border border-[var(--border)]" style="max-height:280px">
+      <table class="w-full text-xs">
+        <thead class="sticky top-0 bg-[var(--surface)]">
+          <tr class="text-[var(--muted)] uppercase tracking-wider">
+            <th class="px-3 py-2 text-left">Par</th><th class="px-3 py-2 text-center">Dir</th>
+            <th class="px-3 py-2 text-right">Lots</th><th class="px-3 py-2 text-right">Net P&L</th>
+            <th class="px-3 py-2 text-left">Cierre</th><th class="px-3 py-2 text-center">Res.</th>
+          </tr>
+        </thead>
+        <tbody id="histBody" class="divide-y divide-[var(--border)]"></tbody>
+      </table>
+    </div>
+    <div class="flex justify-between text-xs text-[var(--muted)] mt-2">
+      <span id="histCount">—</span>
+      <div class="flex gap-4 mono">
+        <span>Win: <span class="text-[var(--accent)]" id="hGrossWin">—</span></span>
+        <span>Loss: <span class="text-[var(--sl)]" id="hGrossLoss">—</span></span>
+        <span>Net: <span id="hNet">—</span></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════ LEADERBOARD ═══════════════════════ -->
+<div id="page-leaderboard" class="page">
+  <div class="max-w-screen-xl mx-auto px-4 py-8 fade-in">
+    <div class="mb-8">
+      <h2 class="text-2xl font-bold mono mb-1">🏆 Leaderboard</h2>
+      <p class="text-sm text-[var(--muted)]">Traders con perfil público · ordenados por Profit Factor</p>
+    </div>
+    <div id="leaderboardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SETTINGS ═══════════════════════ -->
+<div id="page-settings" class="page">
+  <div class="max-w-lg mx-auto px-6 py-12 fade-in">
+    <h2 class="text-xl font-bold mono mb-6">⚙️ Configuración</h2>
+    <div class="card p-6 space-y-5">
+      <div>
+        <label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-2">Tu API Key para el EA</label>
+        <div class="flex gap-2">
+          <input type="text" id="settingsApiKey" readonly style="font-family:'Space Mono',monospace;font-size:12px;color:var(--accent)"/>
+          <button class="btn" onclick="copyApiKey()">Copiar</button>
+        </div>
+        <p class="text-xs text-[var(--muted)] mt-2">Pegá esta key en el campo ApiKey del EA en MT5.</p>
+      </div>
+      <div>
+        <label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-2">URL del Servidor</label>
+        <input type="text" id="settingsServerUrl" readonly style="font-family:'Space Mono',monospace;font-size:12px"/>
+        <p class="text-xs text-[var(--muted)] mt-2">Pegá esta URL en el campo ServerURL del EA.</p>
+      </div>
+      <hr style="border-color:var(--border)">
+      <div>
+        <label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-2">Perfil público</label>
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="settingsPublic" style="width:16px;height:16px;accent-color:var(--accent)"/>
+          <span class="text-sm">Mostrar mi cuenta en el Leaderboard</span>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-[var(--muted)] uppercase tracking-wider block mb-2">Bio</label>
+        <textarea id="settingsBio" rows="3" placeholder="Contá algo sobre tu estrategia..."></textarea>
+      </div>
+      <button class="btn btn-primary w-full" onclick="saveSettings()">Guardar cambios</button>
+      <hr style="border-color:var(--border)">
+      <button class="btn btn-danger w-full" onclick="regenerateKey()">⚠️ Regenerar API Key</button>
+      <p class="text-xs text-[var(--muted)]">Si regenerás la key tenés que actualizarla en el EA.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CONFIG — CAMBIÁ ESTA URL POR LA DE TU RAILWAY
+// ═══════════════════════════════════════════════
+const API_BASE = 'https://arm-platform-backend-production.up.railway.app/api';
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let token     = localStorage.getItem('arm_token')     || '';
+let userData  = JSON.parse(localStorage.getItem('arm_user') || 'null');
+let liveData  = null;
+const charts  = {};
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  if (token && userData) {
+    setLoggedIn(userData);
+    showPage('dashboard');
+    loadDashboard();
+  } else {
+    showPage('landing');
+  }
+});
+
+// ═══════════════════════════════════════════════
+// PAGE ROUTER
+// ═══════════════════════════════════════════════
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (name === 'leaderboard') loadLeaderboard();
+  if (name === 'settings')    loadSettings();
+  window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════
+async function register() {
+  const username = document.getElementById('regUsername').value.trim();
+  const email    = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  if (!username || !email || !password) return toast('Completá todos los campos', 'error');
+
+  const res  = await api('/auth/register', 'POST', { username, email, password });
+  if (res.error) return toast(res.error, 'error');
+
+  token    = res.token;
+  userData = res.user;
+  localStorage.setItem('arm_token', token);
+  localStorage.setItem('arm_user',  JSON.stringify(userData));
+  setLoggedIn(userData);
+  toast('¡Cuenta creada! Bienvenido ' + userData.username);
+  showPage('settings'); // Ir a settings para ver la API key
+}
+
+async function login() {
+  const email    = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) return toast('Completá todos los campos', 'error');
+
+  const res = await api('/auth/login', 'POST', { email, password });
+  if (res.error) return toast(res.error, 'error');
+
+  token    = res.token;
+  userData = res.user;
+  localStorage.setItem('arm_token', token);
+  localStorage.setItem('arm_user',  JSON.stringify(userData));
+  setLoggedIn(userData);
+  toast('¡Bienvenido ' + userData.username + '!');
+  showPage('dashboard');
+  loadDashboard();
+}
+
+function logout() {
+  token    = '';
+  userData = null;
+  liveData = null;
+  localStorage.removeItem('arm_token');
+  localStorage.removeItem('arm_user');
+  document.getElementById('navButtons').classList.remove('hidden');
+  document.getElementById('navUser').classList.add('hidden');
+  document.getElementById('navUser').classList.remove('flex');
+  document.getElementById('navLiveBadge').classList.add('hidden');
+  showPage('landing');
+}
+
+function setLoggedIn(user) {
+  document.getElementById('navButtons').classList.add('hidden');
+  document.getElementById('navUser').classList.remove('hidden');
+  document.getElementById('navUser').classList.add('flex');
+  document.getElementById('navUsername').textContent = user.username;
+}
+
+// ═══════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════
+async function loadDashboard() {
+  if (!token) return;
+  document.getElementById('dashStatus').textContent = 'Cargando...';
+
+  const [liveRes, statsRes] = await Promise.all([
+    api('/dashboard/live'),
+    api('/dashboard/stats')
+  ]);
+
+  if (liveRes.error) {
+    document.getElementById('dashStatus').textContent = 'Error: ' + liveRes.error;
+    return;
+  }
+
+  liveData = liveRes;
+  renderDashboard(liveRes, statsRes);
+}
+
+function renderDashboard(data, stats) {
+  const acc    = data.account;
+  const closed = data.closedTrades || [];
+  const open   = data.openTrades   || [];
+
+  if (!acc) {
+    document.getElementById('dashStatus').textContent = 'EA aún no envió datos — verificá que esté corriendo en MT5';
+    document.getElementById('dashDot').className = 'live-dot off';
+    return;
+  }
+
+  document.getElementById('dashDot').className = 'live-dot on';
+  const lastUpdate = new Date(acc.created_at || acc.timestamp).toLocaleString('es-AR');
+  document.getElementById('dashStatus').textContent   = 'Última actualización: ' + lastUpdate;
+  document.getElementById('dashBroker').textContent   = (acc.broker||'') + ' · Cuenta #' + (acc.account_num||'') + ' · 1:' + (acc.leverage||'') + ' · ' + (acc.currency||'USD');
+  document.getElementById('navLiveBadge').classList.remove('hidden');
+
+  const fmt = (n,d=2) => '$'+parseFloat(n||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+  // KPIs
+  document.getElementById('d-balance').textContent    = fmt(acc.balance);
+  document.getElementById('d-currency').textContent   = acc.currency || 'USD';
+  document.getElementById('d-equity').textContent     = fmt(acc.equity);
+  const fl = parseFloat(acc.floating_pl||0);
+  document.getElementById('d-floating').textContent   = 'Flotante: ' + fmt(fl);
+  document.getElementById('d-floating').style.color   = fl>=0?'var(--accent)':'var(--sl)';
+  const dd = parseFloat(acc.drawdown||0);
+  document.getElementById('d-dd').textContent         = dd.toFixed(2)+'%';
+  document.getElementById('d-dd').style.color         = dd>8?'var(--sl)':dd>4?'var(--accent3)':'var(--accent)';
+  document.getElementById('d-dd-bar').style.width     = Math.min(dd*5,100)+'%';
+  document.getElementById('d-dd-bar').style.background= dd>8?'var(--sl)':dd>4?'var(--accent3)':'var(--accent)';
+  document.getElementById('d-freemargin').textContent = fmt(acc.free_margin);
+  document.getElementById('d-margin').textContent     = 'Usado: '+fmt(acc.margin);
+  document.getElementById('d-open').textContent       = open.length;
+
+  // Stats
+  if (stats && !stats.error) {
+    const wr = stats.win_rate || '—';
+    document.getElementById('d-wr').textContent      = wr+(wr!=='—'?'%':'');
+    document.getElementById('d-wins').textContent    = '✓ '+stats.wins;
+    document.getElementById('d-losses').textContent  = '✗ '+stats.losses;
+    const pf = stats.profit_factor;
+    document.getElementById('d-pf').textContent      = pf;
+    document.getElementById('d-pf').style.color      = parseFloat(pf)>=1.5?'var(--accent)':parseFloat(pf)>=1?'var(--accent3)':'var(--sl)';
+    const net = parseFloat(stats.net_pl||0)+fl;
+    document.getElementById('d-net').textContent     = fmt(net);
+    document.getElementById('d-net').style.color     = net>=0?'var(--accent)':'var(--sl)';
+  }
+
+  // Posiciones abiertas
+  const ob = document.getElementById('d-open-body');
+  if (!open.length) {
+    ob.innerHTML = `<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--muted)">Sin posiciones abiertas</td></tr>`;
+    document.getElementById('d-open-summary').textContent = 'Sin posiciones';
+    document.getElementById('d-open-total').textContent = '';
+  } else {
+    ob.innerHTML = open.map(t=>{
+      const pl=parseFloat(t.profit||0);
+      return `<tr class="hover:bg-white hover:bg-opacity-5">
+        <td style="padding:6px 8px;font-weight:700">${t.symbol}</td>
+        <td style="padding:6px 8px;text-align:center"><span class="tag ${t.type==='BUY'?'badge-tp':'badge-neu'}" style="font-size:10px">${t.type}</span></td>
+        <td style="padding:6px 8px;text-align:right;font-family:'Space Mono',monospace">${parseFloat(t.lots||0).toFixed(2)}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${pl>=0?'var(--accent)':'var(--sl)'}">$${parseFloat(pl).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+    const tot = open.reduce((s,t)=>s+parseFloat(t.profit||0),0);
+    document.getElementById('d-open-summary').textContent = open.length+' posición'+(open.length!==1?'es':'');
+    const totEl = document.getElementById('d-open-total');
+    totEl.textContent = '$'+tot.toFixed(2);
+    totEl.style.color = tot>=0?'var(--accent)':'var(--sl)';
+  }
+
+  // Equity curve
+  const curve = data.equityCurve || [];
+  mkChart('equityChart','line',{
+    labels: curve.map(r=>new Date(r.timestamp).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})),
+    datasets:[
+      {label:'Balance',data:curve.map(r=>parseFloat(r.balance||0)),borderColor:'#00d4aa',backgroundColor:'rgba(0,212,170,0.06)',fill:false,tension:0.3,pointRadius:0,borderWidth:2},
+      {label:'Equity', data:curve.map(r=>parseFloat(r.equity||0)), borderColor:'#ffc14d',backgroundColor:'rgba(255,193,77,0.04)',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
+    ]
+  },{scales:{x:{ticks:{display:false},grid:{display:false}},y:{ticks:{color:'#64748b',font:{size:10},callback:v=>'$'+v.toLocaleString('es-AR')}}}});
+
+  // Charts
+  renderPairChart(closed);
+  renderMonthlyChart(closed);
+  renderWRChart(closed);
+  renderCumulChart(closed);
+  renderDistChart(closed, stats);
+
+  // Filtro de símbolos
+  const syms = [...new Set(closed.map(t=>t.symbol).filter(Boolean))].sort();
+  document.getElementById('hSymbol').innerHTML = '<option value="ALL">Todos los pares</option>'+syms.map(s=>`<option value="${s}">${s}</option>`).join('');
+  renderHistory();
+}
+
+function renderPairChart(closed) {
+  const map={};
+  for(const t of closed){if(!map[t.symbol])map[t.symbol]=0;map[t.symbol]+=parseFloat(t.net_profit||0);}
+  const entries=Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  mkChart('pairChart','bar',{
+    labels:entries.map(e=>e[0]),
+    datasets:[{label:'Net P&L',data:entries.map(e=>parseFloat(e[1].toFixed(2))),
+      backgroundColor:entries.map(e=>e[1]>=0?'rgba(0,212,170,0.75)':'rgba(255,77,109,0.75)'),borderRadius:5,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{ticks:{color:'#64748b',font:{size:10},callback:v=>'$'+v}}}});
+}
+
+function renderMonthlyChart(closed) {
+  const map={};
+  const mn=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  for(const t of closed){
+    const d=new Date(t.close_time);if(isNaN(d))continue;
+    const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    if(!map[k])map[k]=0;map[k]+=parseFloat(t.net_profit||0);
+  }
+  const keys=Object.keys(map).sort();
+  const vals=keys.map(k=>parseFloat(map[k].toFixed(2)));
+  mkChart('monthlyChart','bar',{
+    labels:keys.map(k=>{const[y,m]=k.split('-');return mn[parseInt(m)]+"'"+y.slice(2);}),
+    datasets:[{label:'P&L',data:vals,backgroundColor:vals.map(v=>v>=0?'rgba(0,212,170,0.75)':'rgba(255,77,109,0.75)'),borderRadius:5,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{ticks:{color:'#64748b',font:{size:10},callback:v=>'$'+v}}}});
+}
+
+function renderWRChart(closed) {
+  const map={};
+  for(const t of closed){if(!map[t.symbol])map[t.symbol]={w:0,t:0};map[t.symbol].t++;if(parseFloat(t.net_profit||0)>0)map[t.symbol].w++;}
+  const entries=Object.entries(map).filter(e=>e[1].t>=2).sort((a,b)=>b[1].w/b[1].t-a[1].w/a[1].t);
+  const wrs=entries.map(e=>parseFloat((e[1].w/e[1].t*100).toFixed(1)));
+  mkChart('wrChart','bar',{
+    labels:entries.map(e=>e[0]),
+    datasets:[{label:'WR%',data:wrs,backgroundColor:wrs.map(v=>v>=50?'rgba(0,212,170,0.75)':v>=40?'rgba(255,193,77,0.75)':'rgba(255,77,109,0.75)'),borderRadius:5,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'}}}});
+}
+
+function renderCumulChart(closed) {
+  let r=0;
+  const data=[...closed].reverse().map(t=>{r+=parseFloat(t.net_profit||0);return parseFloat(r.toFixed(2));});
+  mkChart('cumulChart','line',{
+    labels:data.map((_,i)=>i+1),
+    datasets:[{label:'P&L Acum.',data,borderColor:'#00d4aa',backgroundColor:'rgba(0,212,170,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:2}]
+  },{plugins:{legend:{display:false}},scales:{x:{ticks:{display:false},grid:{display:false}},y:{ticks:{color:'#64748b',font:{size:10},callback:v=>'$'+v}}}});
+}
+
+function renderDistChart(closed, stats) {
+  if(!stats||stats.error)return;
+  const avgW=parseFloat(stats.avg_win||0),avgL=parseFloat(stats.avg_loss||0),bestT=parseFloat(stats.best_trade||0),worstT=Math.abs(parseFloat(stats.worst_trade||0));
+  mkChart('distChart','bar',{
+    labels:['Avg Win','Avg Loss','Best Trade','Worst Trade'],
+    datasets:[{label:'USD',data:[avgW,avgL,bestT,worstT],backgroundColor:['rgba(0,212,170,0.75)','rgba(255,77,109,0.75)','rgba(0,212,170,0.5)','rgba(255,77,109,0.5)'],borderRadius:6,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{ticks:{color:'#64748b',font:{size:10},callback:v=>'$'+v}}}});
+}
+
+function renderHistory() {
+  if(!liveData)return;
+  const fR=document.getElementById('hFilter').value;
+  const fS=document.getElementById('hSymbol').value;
+  const fD=document.getElementById('hDir').value;
+  const fmt=(n,d=2)=>'$'+parseFloat(n||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d});
+  let rows=(liveData.closedTrades||[]).filter(t=>{
+    const pl=parseFloat(t.net_profit||0),win=pl>0;
+    return(fR==='ALL'||(fR==='WIN'&&win)||(fR==='LOSS'&&!win))&&(fS==='ALL'||t.symbol===fS)&&(fD==='ALL'||t.type===fD);
+  });
+  const gw=rows.filter(t=>parseFloat(t.net_profit||0)>0).reduce((s,t)=>s+parseFloat(t.net_profit||0),0);
+  const gl=Math.abs(rows.filter(t=>parseFloat(t.net_profit||0)<=0).reduce((s,t)=>s+parseFloat(t.net_profit||0),0));
+  const nt=rows.reduce((s,t)=>s+parseFloat(t.net_profit||0),0);
+  document.getElementById('histCount').textContent=rows.length+' trades';
+  document.getElementById('hGrossWin').textContent=fmt(gw);
+  document.getElementById('hGrossLoss').textContent=fmt(gl);
+  const ntEl=document.getElementById('hNet');ntEl.textContent=fmt(nt);ntEl.style.color=nt>=0?'var(--accent)':'var(--sl)';
+  document.getElementById('histBody').innerHTML=rows.slice(0,300).map(t=>{
+    const pl=parseFloat(t.net_profit||0),isW=pl>0;
+    const closeStr=t.close_time?new Date(t.close_time).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'}):'—';
+    return`<tr class="hover:bg-white hover:bg-opacity-5 transition-colors">
+      <td style="padding:6px 12px;font-weight:700">${t.symbol}</td>
+      <td style="padding:6px 12px;text-align:center"><span class="tag ${t.type==='BUY'?'badge-tp':'badge-neu'}" style="font-size:10px">${t.type}</span></td>
+      <td style="padding:6px 12px;text-align:right;font-family:'Space Mono',monospace">${parseFloat(t.lots||0).toFixed(2)}</td>
+      <td style="padding:6px 12px;text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${isW?'var(--accent)':'var(--sl)'}">${fmt(pl)}</td>
+      <td style="padding:6px 12px;color:var(--muted);font-size:11px">${closeStr}</td>
+      <td style="padding:6px 12px;text-align:center"><span class="tag ${isW?'badge-tp':'badge-sl'}" style="font-size:10px">${isW?'WIN':'LOSS'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// LEADERBOARD
+// ═══════════════════════════════════════════════
+async function loadLeaderboard() {
+  const res = await api('/leaderboard');
+  if(res.error||!Array.isArray(res)){document.getElementById('leaderboardGrid').innerHTML='<p class="text-[var(--muted)] text-sm">No hay traders públicos todavía.</p>';return;}
+  document.getElementById('leaderboardGrid').innerHTML=res.map((t,i)=>{
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+    const wr=parseFloat(t.win_rate||0);
+    const pf=parseFloat(t.profit_factor||0);
+    return`<div class="card p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">${medal||'#'+(i+1)}</span>
+          <span class="font-bold mono">${t.username}</span>
+        </div>
+        <span class="tag badge-tp">PF: ${t.profit_factor||'—'}</span>
+      </div>
+      ${t.bio?`<p class="text-xs text-[var(--muted)] mb-3">${t.bio}</p>`:''}
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div><div class="mono font-bold text-[var(--accent)]">${wr.toFixed(1)}%</div><div class="text-xs text-[var(--muted)]">WR</div></div>
+        <div><div class="mono font-bold">${t.total_trades}</div><div class="text-xs text-[var(--muted)]">Trades</div></div>
+        <div><div class="mono font-bold ${parseFloat(t.net_pl||0)>=0?'text-[var(--accent)]':'text-[var(--sl)]'}">$${parseFloat(t.net_pl||0).toFixed(0)}</div><div class="text-xs text-[var(--muted)]">Net P&L</div></div>
+      </div>
+      <div class="mt-3 text-xs text-[var(--muted)]">DD actual: <span class="font-semibold">${parseFloat(t.current_dd||0).toFixed(2)}%</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════
+async function loadSettings() {
+  if(!token)return;
+  const me = await api('/auth/me');
+  if(me.error)return;
+  document.getElementById('settingsApiKey').value  = me.api_key || '';
+  document.getElementById('settingsPublic').checked= me.is_public || false;
+  document.getElementById('settingsBio').value     = me.bio || '';
+  document.getElementById('settingsServerUrl').value = API_BASE.replace('/api','');
+}
+
+async function saveSettings() {
+  const is_public = document.getElementById('settingsPublic').checked;
+  const bio       = document.getElementById('settingsBio').value.trim();
+  const res = await api('/auth/settings', 'PUT', { is_public, bio });
+  if(res.error) return toast(res.error,'error');
+  toast('Configuración guardada ✓');
+}
+
+async function regenerateKey() {
+  if(!confirm('¿Regenerar la API Key? Tenés que actualizarla en el EA.'))return;
+  const res = await api('/auth/regenerate-key','POST');
+  if(res.error)return toast(res.error,'error');
+  document.getElementById('settingsApiKey').value = res.api_key;
+  if(userData){userData.api_key=res.api_key;localStorage.setItem('arm_user',JSON.stringify(userData));}
+  toast('API Key regenerada — actualizala en el EA');
+}
+
+function copyApiKey() {
+  const val = document.getElementById('settingsApiKey').value;
+  navigator.clipboard.writeText(val).then(()=>toast('API Key copiada ✓'));
+}
+
+// ═══════════════════════════════════════════════
+// API HELPER
+// ═══════════════════════════════════════════════
+async function api(path, method='GET', body=null) {
+  try {
+    const opts = { method, headers:{ 'Content-Type':'application/json' } };
+    if(token) opts.headers['Authorization'] = 'Bearer '+token;
+    if(body)  opts.body = JSON.stringify(body);
+    const res  = await fetch(API_BASE+path, opts);
+    const data = await res.json();
+    if(res.status===401&&token){logout();return{error:'Sesión expirada'};}
+    return data;
+  } catch(err) {
+    return { error: 'Error de conexión con el servidor' };
+  }
+}
+
+// ═══════════════════════════════════════════════
+// CHART HELPER
+// ═══════════════════════════════════════════════
+const baseOpts={responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},tooltip:{backgroundColor:'#1e2230',titleColor:'#e2e8f0',bodyColor:'#94a3b8',borderColor:'#374151',borderWidth:1}},scales:{x:{ticks:{color:'#64748b',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#64748b',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}}}};
+function deepMerge(a,b){const r={...a};for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k]))r[k]=deepMerge(a[k]||{},b[k]);else r[k]=b[k];}return r;}
+function mkChart(id,type,data,opts={}){if(charts[id]){charts[id].destroy();delete charts[id];}const ctx=document.getElementById(id);if(!ctx)return;charts[id]=new Chart(ctx.getContext('2d'),{type,data,options:deepMerge(baseOpts,opts)});}
+
+// ═══════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  const inner = document.getElementById('toastMsg');
+  inner.textContent = msg;
+  inner.style.color = type==='error'?'var(--sl)':'var(--accent)';
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none', 3500);
+}
+</script>
+</body>
+</html>
