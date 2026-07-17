@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARM US100 — Backtesting Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10; --surface: #111318; --border: #1e2230;
+    --accent: #00d4aa; --accent2: #ff4d6d; --accent3: #ffc14d;
+    --text: #e2e8f0; --muted: #64748b; --tp: #00d4aa; --sl: #ff4d6d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  .mono { font-family: 'Space Mono', monospace; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .badge-tp { background: rgba(0,212,170,0.12); color: var(--tp); border: 1px solid rgba(0,212,170,0.25); }
+  .badge-sl { background: rgba(255,77,109,0.12); color: var(--sl); border: 1px solid rgba(255,77,109,0.25); }
+  .badge-neutral { background: rgba(255,193,77,0.12); color: var(--accent3); border: 1px solid rgba(255,193,77,0.25); }
+  select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; outline: none; }
+  select:focus { border-color: var(--accent); }
+  canvas { max-height: 250px; }
+  .stat-val { font-size: 2rem; font-weight: 700; font-family: 'Space Mono', monospace; line-height: 1; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-top: 6px; }
+  .tag { display: inline-flex; align-items: center; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; }
+  .tab-btn { border-radius: 8px; padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+  .tab-btn.active { background: var(--accent); color: #0a0c10; border-color: var(--accent); }
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .heatmap-cell { border-radius: 6px; transition: transform 0.15s; cursor: pointer; }
+  .heatmap-cell:hover { transform: scale(1.1); }
+  /* Gallery */
+  .trade-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: transform 0.2s, border-color 0.2s; }
+  .trade-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.15); }
+  .trade-card.tp-card { border-top: 3px solid var(--tp); }
+  .trade-card.sl-card { border-top: 3px solid var(--sl); }
+  .tv-preview { width: 100%; height: 160px; background: #0d1117; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .tv-preview-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #0d1117 0%, #111827 100%); }
+  .tv-chart-icon { position: relative; z-index: 1; opacity: 0.15; }
+  .tv-btn { display: inline-flex; align-items: center; gap: 6px; background: #1a1f2e; border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+  .tv-btn:hover { background: var(--accent); color: #0a0c10; border-color: var(--accent); }
+  .gallery-empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+  /* Lightbox */
+  #galleryLightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 300; align-items: center; justify-content: center; flex-direction: column; }
+  #galleryLightbox.open { display: flex; }
+  #lbInfo { color: var(--text); font-size: 13px; margin-bottom: 12px; text-align: center; }
+  #lbClose { position: absolute; top: 20px; right: 24px; background: none; border: none; color: var(--muted); font-size: 28px; cursor: pointer; line-height: 1; }
+  #lbClose:hover { color: var(--text); }
+  #lbPrev, #lbNext { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.08); border: 1px solid var(--border); color: var(--text); width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+  #lbPrev:hover, #lbNext:hover { background: rgba(255,255,255,0.16); }
+  #lbPrev { left: 20px; } #lbNext { right: 20px; }
+  @keyframes fadeInUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation: fadeInUp 0.4s ease both; }
+  .grid-lines { background-image: radial-gradient(circle, #1e2230 1px, transparent 1px); background-size: 28px 28px; }
+  /* Loading overlay */
+  #loadingOverlay { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:100; transition: opacity 0.5s; }
+  #loadingOverlay.hidden { opacity:0; pointer-events:none; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; margin-bottom:16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Error banner */
+  #errorBanner { display:none; background:rgba(255,77,109,0.1); border:1px solid rgba(255,77,109,0.3); border-radius:10px; padding:16px 20px; margin-bottom:20px; }
+  /* Live indicator */
+  .live-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
+  /* Config modal */
+  #configModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; }
+  #configModal.open { display:flex; }
+  #configBox { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px; max-width:520px; width:90%; }
+  input[type=text] { width:100%; background:#0a0c10; border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-size:13px; font-family:'Space Mono',monospace; outline:none; margin-top:6px; }
+  input[type=text]:focus { border-color:var(--accent); }
+  .btn-primary { background:var(--accent); color:#0a0c10; border:none; border-radius:8px; padding:10px 20px; font-weight:700; cursor:pointer; font-size:13px; transition:opacity 0.2s; }
+  .btn-primary:hover { opacity:0.85; }
+  .btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:8px; padding:10px 20px; font-size:13px; cursor:pointer; }
+
+  /* ── NAV MULTI ACTIVO ── */
+  .nav-btn{font-family:'Inter',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;color:#64748b;text-decoration:none;border:1px solid transparent;transition:all 0.2s;}
+  .nav-btn:hover{color:#e2e8f0;border-color:#1e2230;}
+  .nav-btn.active{background:#00d4aa;color:#0a0c10;border-color:#00d4aa;}
+
+</style>
+</head>
+<body class="grid-lines">
+
+<nav style="background:rgba(10,12,16,0.97);border-bottom:1px solid #1e2230;position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);">
+  <div style="max-width:1600px;margin:0 auto;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:52px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <span style="font-family:'Space Mono',monospace;font-weight:700;font-size:14px;color:#e2e8f0">ARM <span style="color:#00d4aa">Backtest</span></span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        <a href="index.html"       class="nav-btn" id="nav-eurusd">EUR/USD</a>
+        <a href="us100.html"       class="nav-btn" id="nav-us100" class="nav-btn active">US100</a>
+        <a href="xauusd.html"      class="nav-btn" id="nav-xauusd">XAU/USD</a>
+        <a href="comparativa.html" class="nav-btn" id="nav-comp">📊 Comparativa</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <p class="mono text-sm text-[var(--accent)]">Cargando datos desde Google Sheets...</p>
+  <p class="text-xs text-[var(--muted)] mt-2" id="loadingStatus">Conectando...</p>
+</div>
+
+<!-- Config Modal -->
+<div id="configModal">
+  <div id="configBox">
+    <h2 class="text-lg font-bold mono mb-1">⚙️ Configurar fuente de datos</h2>
+    <p class="text-xs text-[var(--muted)] mb-5">Pegá la URL de tu Google Apps Script Web App para conectar el dashboard en vivo.</p>
+
+    <label class="text-xs text-[var(--muted)] uppercase tracking-wider">URL del Web App (Apps Script)</label>
+    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/AKfy.../exec" />
+    <p class="text-xs text-[var(--muted)] mt-2">Esta URL la obtenés al hacer "Deploy → New deployment" en tu Google Sheet. Mirá las instrucciones incluidas.</p>
+
+    <div class="flex gap-3 mt-6 justify-end">
+      <button class="btn-ghost" onclick="closeConfig()">Cancelar</button>
+      <button class="btn-primary" onclick="saveConfig()">Guardar y conectar</button>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+
+  <!-- Error banner -->
+  <div id="errorBanner">
+    <p class="text-sm text-[var(--sl)] font-semibold">⚠️ No se pudo cargar datos en vivo</p>
+    <p class="text-xs text-[var(--muted)] mt-1" id="errorMsg"></p>
+    <button onclick="openConfig()" class="text-xs text-[var(--accent)] underline mt-2 cursor-pointer">Configurar URL del script →</button>
+  </div>
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 fade-in">
+    <div>
+      <div class="flex items-center gap-3 mb-1 flex-wrap">
+        <span class="mono text-xs text-[var(--accent)] tracking-widest uppercase">Live Backtesting Analytics</span>
+        <span class="tag badge-neutral">ARM Strategy</span>
+        <div class="flex items-center gap-2">
+          <div class="live-dot"></div>
+          <span class="text-xs text-[var(--muted)]" id="lastUpdate">—</span>
+        </div>
+      </div>
+      <h1 class="text-3xl font-bold mono tracking-tight">US100 <span class="text-[var(--muted)] font-normal">1M</span></h1>
+      <p class="text-[var(--muted)] text-sm mt-1" id="headerSubtitle">Cargando datos...</p>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div>
+        <label class="block text-xs text-[var(--muted)] mb-1">Sesión</label>
+        <select id="filterSesion" onchange="applyFilters()">
+          <option value="ALL">Todas las sesiones</option>
+          <option value="LONDRES">Londres</option>
+          <option value="NY">New York</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-[var(--muted)] mb-1">Dirección</label>
+        <select id="filterDir" onchange="applyFilters()">
+          <option value="ALL">LONG + SHORT</option>
+          <option value="LONG">Solo LONG</option>
+          <option value="SHORT">Solo SHORT</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-[var(--muted)] mb-1">Año</label>
+        <select id="filterYear" onchange="applyFilters()"><option value="ALL">Todos</option></select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="block text-xs text-[var(--muted)] mb-1">Acciones</label>
+        <div class="flex gap-2">
+          <button onclick="refreshData()" class="tab-btn active text-xs px-3 py-2">↻ Actualizar</button>
+          <button onclick="openConfig()" class="tab-btn text-xs px-3 py-2">⚙️ Config</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6 fade-in" style="animation-delay:0.05s">
+    <div class="card p-4 col-span-2" style="box-shadow:0 0 20px rgba(0,212,170,0.07)">
+      <div class="stat-label">Profit Factor</div>
+      <div class="stat-val text-[var(--accent)] mt-2" id="kpi-pf">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2">Ganancia / Pérdida bruta</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Win Rate Total</div>
+      <div class="stat-val mt-2" id="kpi-wr">—</div>
+      <div class="flex gap-2 mt-2">
+        <span class="tag badge-tp text-xs" id="kpi-tp-n">—</span>
+        <span class="tag badge-sl text-xs" id="kpi-sl-n">—</span>
+      </div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">WR Londres</div>
+      <div class="stat-val mt-2 text-[var(--accent3)]" id="kpi-wr-lon">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2" id="kpi-lon-n">—</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">WR New York</div>
+      <div class="stat-val mt-2" id="kpi-wr-ny">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2" id="kpi-ny-n">—</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Racha Máx SL</div>
+      <div class="stat-val mt-2 text-[var(--sl)]" id="kpi-sl-streak">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2">Peor racha consecutiva</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Racha Máx TP</div>
+      <div class="stat-val mt-2 text-[var(--tp)]" id="kpi-tp-streak">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2">Mejor racha consecutiva</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Net % Total</div>
+      <div class="stat-val mt-2 text-[var(--accent)]" id="kpi-net">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2">Riesgo fijo 1%/trade</div>
+    </div>
+    <div class="card p-4 col-span-2">
+      <div class="stat-label">Total Trades</div>
+      <div class="stat-val mt-2" id="kpi-total">—</div>
+      <div class="text-xs text-[var(--muted)] mt-2" id="kpi-avg-pips">—</div>
+    </div>
+  </div>
+
+  <!-- ROW 2: Equity + Sessions -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 fade-in" style="animation-delay:0.1s">
+    <div class="card p-5 lg:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="font-semibold text-sm">Curva de Equidad Acumulada</h3>
+          <p class="text-xs text-[var(--muted)] mt-1">P&L acumulado en % de cuenta</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="tab-btn active" onclick="switchEquity('net',this)">Net</button>
+          <button class="tab-btn" onclick="switchEquity('cumtp',this)">Solo TP</button>
+        </div>
+      </div>
+      <div class="chart-container"><canvas id="equityChart"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-1">Distribución TP / SL</h3>
+      <p class="text-xs text-[var(--muted)] mb-4">Por sesión de mercado</p>
+      <div style="max-height:200px"><canvas id="sessionDonut"></canvas></div>
+      <div class="mt-4 space-y-2" id="sessionStats"></div>
+    </div>
+  </div>
+
+  <!-- ROW 3: Day + Hour -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.15s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Día de Semana</h3>
+      <div class="chart-container"><canvas id="dayChart"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Hora de Entrada (UTC-3)</h3>
+      <div class="chart-container"><canvas id="hourChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ROW 4: Monthly + Streaks -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 fade-in" style="animation-delay:0.2s">
+    <div class="card p-5 lg:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Rendimiento Mensual</h3>
+        <select id="monthYearFilter" onchange="renderMonthlyChart()">
+          <option value="ALL">Todos los meses</option>
+        </select>
+      </div>
+      <div class="chart-container"><canvas id="monthlyChart"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Historial de Rachas</h3>
+      <div class="chart-container"><canvas id="streakChart"></canvas></div>
+      <div class="mt-4 grid grid-cols-2 gap-3">
+        <div class="rounded-lg p-3 bg-[rgba(255,77,109,0.08)] border border-[rgba(255,77,109,0.2)]">
+          <div class="text-xs text-[var(--muted)] mb-1">Peor Racha SL</div>
+          <div class="mono font-bold text-[var(--sl)] text-xl" id="streakMaxSL">—</div>
+        </div>
+        <div class="rounded-lg p-3 bg-[rgba(0,212,170,0.08)] border border-[rgba(0,212,170,0.2)]">
+          <div class="text-xs text-[var(--muted)] mb-1">Mejor Racha TP</div>
+          <div class="mono font-bold text-[var(--tp)] text-xl" id="streakMaxTP">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 5: Heatmap + LONG vs SHORT -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.25s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-1">Heatmap: WR por Día × Hora (UTC-3)</h3>
+      <p class="text-xs text-[var(--muted)] mb-4">Verde = mayor win rate · Hover para detalles</p>
+      <div id="heatmapContainer" class="overflow-x-auto scrollbar-thin"></div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">LONG vs SHORT — Comparativo</h3>
+      <div style="max-height:220px"><canvas id="longShortChart"></canvas></div>
+      <div class="grid grid-cols-2 gap-3 mt-4" id="longShortStats"></div>
+    </div>
+  </div>
+
+  <!-- ROW 6: PIPS + Table -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 fade-in" style="animation-delay:0.3s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Distribución de PIPS</h3>
+      <div class="chart-container"><canvas id="pipsHistogram"></canvas></div>
+    </div>
+    <div class="card p-5 lg:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Registro de Operaciones</h3>
+        <div class="flex gap-2">
+          <select id="tableFilter" onchange="renderTable()">
+            <option value="ALL">Todos</option>
+            <option value="TP">Solo TP</option>
+            <option value="SL">Solo SL</option>
+          </select>
+          <select id="tableSesionFilter" onchange="renderTable()">
+            <option value="ALL">Todas sesiones</option>
+            <option value="LONDRES">Londres</option>
+            <option value="NY">New York</option>
+          </select>
+        </div>
+      </div>
+      <div class="overflow-auto max-h-64 scrollbar-thin rounded-lg border border-[var(--border)]">
+        <table class="w-full text-xs">
+          <thead class="sticky top-0 bg-[var(--surface)]">
+            <tr class="text-[var(--muted)] uppercase tracking-wider">
+              <th class="px-3 py-2 text-left">Fecha</th>
+              <th class="px-3 py-2 text-left">Día</th>
+              <th class="px-3 py-2 text-left">Dir</th>
+              <th class="px-3 py-2 text-left">Sesión</th>
+              <th class="px-3 py-2 text-left">Hora</th>
+              <th class="px-3 py-2 text-right">PIPS</th>
+              <th class="px-3 py-2 text-center">Resultado</th>
+            </tr>
+          </thead>
+          <tbody id="tradeTableBody" class="divide-y divide-[var(--border)]"></tbody>
+        </table>
+      </div>
+      <div class="text-xs text-[var(--muted)] mt-2" id="tableCount"></div>
+    </div>
+  </div>
+
+  <!-- ROW 7: Yearly -->
+  <div class="card p-5 mb-6 fade-in" style="animation-delay:0.35s">
+    <h3 class="font-semibold text-sm mb-4">Resumen Anual Comparativo</h3>
+    <div class="chart-container"><canvas id="yearlyChart"></canvas></div>
+  </div>
+
+  <!-- ROW 8: Trade Gallery -->
+  <div class="card p-5 mb-6 fade-in" style="animation-delay:0.4s">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+      <div>
+        <h3 class="font-semibold text-sm">Galería de Trades</h3>
+        <p class="text-xs text-[var(--muted)] mt-1">Visualizá cada operación en TradingView</p>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <select id="galleryFilterTpsl" onchange="renderGallery()">
+          <option value="ALL">TP + SL</option>
+          <option value="TP">Solo TP</option>
+          <option value="SL">Solo SL</option>
+        </select>
+        <select id="galleryFilterSesion" onchange="renderGallery()">
+          <option value="ALL">Todas las sesiones</option>
+          <option value="LONDRES">Londres</option>
+          <option value="NY">New York</option>
+        </select>
+        <select id="galleryFilterDir" onchange="renderGallery()">
+          <option value="ALL">LONG + SHORT</option>
+          <option value="LONG">Solo LONG</option>
+          <option value="SHORT">Solo SHORT</option>
+        </select>
+        <select id="galleryFilterYear" onchange="renderGallery()">
+          <option value="ALL">Todos los años</option>
+        </select>
+        <select id="gallerySort" onchange="renderGallery()">
+          <option value="recent">Más recientes</option>
+          <option value="oldest">Más antiguos</option>
+          <option value="pips_desc">Mayor PIPS</option>
+          <option value="pips_asc">Menor PIPS</option>
+        </select>
+      </div>
+    </div>
+    <div class="text-xs text-[var(--muted)] mb-4" id="galleryCount"></div>
+    <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"></div>
+    <div class="flex justify-center mt-5" id="galleryPagination"></div>
+  </div>
+
+  <!-- ROW LIVE: Cuenta Real MT5 -->
+  <div class="mb-6 fade-in" style="animation-delay:0.45s">
+    <div class="flex items-center gap-3 mb-4">
+      <h2 class="text-lg font-bold mono">Cuenta Real <span class="text-[var(--accent)]">MT5</span></h2>
+      <div class="flex items-center gap-2">
+        <div class="live-dot" id="liveDot" style="background:var(--muted)"></div>
+        <span class="text-xs text-[var(--muted)]" id="liveStatus">Sin conexión — EA no enviando datos</span>
+      </div>
+      <button onclick="refreshLive()" class="tab-btn text-xs px-3 py-2 ml-auto">↻ Actualizar</button>
+    </div>
+
+    <!-- KPIs cuenta real -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
+      <div class="card p-4 col-span-2" style="box-shadow:0 0 20px rgba(0,212,170,0.07)">
+        <div class="stat-label">Balance</div>
+        <div class="stat-val text-[var(--accent)] mt-2 text-2xl" id="live-balance">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1" id="live-currency">USD</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Equity</div>
+        <div class="stat-val mt-2 text-2xl" id="live-equity">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1" id="live-floating">P&L abierto: —</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Drawdown Actual</div>
+        <div class="stat-val mt-2 text-2xl text-[var(--sl)]" id="live-drawdown">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1">Desde balance</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Margen Libre</div>
+        <div class="stat-val mt-2 text-2xl" id="live-freemargin">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1" id="live-margin">Usado: —</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Trades Abiertos</div>
+        <div class="stat-val mt-2 text-2xl text-[var(--accent3)]" id="live-opencount">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1">En este momento</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">WR Real</div>
+        <div class="stat-val mt-2 text-2xl" id="live-wr">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1" id="live-wr-detail">—</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Profit Factor Real</div>
+        <div class="stat-val mt-2 text-2xl text-[var(--accent)]" id="live-pf">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1">Últimos 90 días</div>
+      </div>
+      <div class="card p-4 col-span-2">
+        <div class="stat-label">Net P&L Real</div>
+        <div class="stat-val mt-2 text-2xl" id="live-net">—</div>
+        <div class="text-xs text-[var(--muted)] mt-1">Cerrados + abiertos</div>
+      </div>
+    </div>
+
+    <!-- Equity curve + trades abiertos -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      <div class="card p-5 lg:col-span-2">
+        <h3 class="font-semibold text-sm mb-4">Equity Curve — Cuenta Real (últimas 24h)</h3>
+        <div class="chart-container"><canvas id="liveEquityChart"></canvas></div>
+      </div>
+      <div class="card p-5">
+        <h3 class="font-semibold text-sm mb-3">Trades Abiertos Ahora</h3>
+        <div class="overflow-auto max-h-56 scrollbar-thin">
+          <table class="w-full text-xs">
+            <thead class="sticky top-0 bg-[var(--surface)]">
+              <tr class="text-[var(--muted)] uppercase tracking-wider">
+                <th class="px-2 py-2 text-left">Par</th>
+                <th class="px-2 py-2 text-left">Dir</th>
+                <th class="px-2 py-2 text-right">Lots</th>
+                <th class="px-2 py-2 text-right">P&L</th>
+              </tr>
+            </thead>
+            <tbody id="liveOpenBody" class="divide-y divide-[var(--border)]"></tbody>
+          </table>
+        </div>
+        <div class="text-xs text-[var(--muted)] mt-2" id="liveOpenCount">Sin posiciones abiertas</div>
+      </div>
+    </div>
+
+    <!-- Historial trades reales -->
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Historial de Trades Reales</h3>
+        <div class="flex gap-2">
+          <select id="liveHistoryFilter" onchange="renderLiveHistory()">
+            <option value="ALL">Todos</option>
+            <option value="WIN">Ganadores</option>
+            <option value="LOSS">Perdedores</option>
+          </select>
+          <select id="liveSymbolFilter" onchange="renderLiveHistory()">
+            <option value="ALL">Todos los pares</option>
+          </select>
+        </div>
+      </div>
+      <div class="overflow-auto max-h-64 scrollbar-thin rounded-lg border border-[var(--border)]">
+        <table class="w-full text-xs">
+          <thead class="sticky top-0 bg-[var(--surface)]">
+            <tr class="text-[var(--muted)] uppercase tracking-wider">
+              <th class="px-3 py-2 text-left">Ticket</th>
+              <th class="px-3 py-2 text-left">Par</th>
+              <th class="px-3 py-2 text-left">Dir</th>
+              <th class="px-3 py-2 text-right">Lots</th>
+              <th class="px-3 py-2 text-right">Net P&L</th>
+              <th class="px-3 py-2 text-left">Cierre</th>
+              <th class="px-3 py-2 text-center">Resultado</th>
+            </tr>
+          </thead>
+          <tbody id="liveHistoryBody" class="divide-y divide-[var(--border)]"></tbody>
+        </table>
+      </div>
+      <div class="text-xs text-[var(--muted)] mt-2" id="liveHistoryCount"></div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="galleryLightbox">
+    <button id="lbClose" onclick="closeLightbox()">✕</button>
+    <button id="lbPrev" onclick="lbNav(-1)">‹</button>
+    <button id="lbNext" onclick="lbNav(1)">›</button>
+    <div id="lbInfo"></div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center">
+      <button id="lbTvBtn" onclick="openTV()" class="tv-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        Abrir en TradingView ↗
+      </button>
+    </div>
+  </div>
+
+  <div class="text-center text-xs text-[var(--muted)] py-4 mono">
+    ARM EURUSD Live Dashboard · <span id="footerCount">—</span> operaciones · Se actualiza al recargar
+  </div>
+</div>
+
+<script>
+// =============================================
+// CONFIG — Cambiá esta URL por la de tu script
+// =============================================
+const CONFIG_KEY = 'arm_dashboard_script_url';
+let SCRIPT_URL = localStorage.getItem(CONFIG_KEY) || '';
+
+// =============================================
+// DATA STATE
+// =============================================
+let RAW_DATA = [];
+let filteredData = [];
+let equityMode = 'net';
+const chartInstances = {};
+
+// =============================================
+// CONFIG MODAL
+// =============================================
+function openConfig() {
+  document.getElementById('scriptUrlInput').value = SCRIPT_URL;
+  document.getElementById('configModal').classList.add('open');
+}
+function closeConfig() {
+  document.getElementById('configModal').classList.remove('open');
+}
+function saveConfig() {
+  const url = document.getElementById('scriptUrlInput').value.trim();
+  if (!url) return alert('Pegá la URL del script primero.');
+  SCRIPT_URL = url;
+  localStorage.setItem(CONFIG_KEY, url);
+  closeConfig();
+  refreshData();
+}
+
+// =============================================
+// DATA LOADING
+// =============================================
+async function fetchData() {
+  if (!SCRIPT_URL) throw new Error('URL no configurada. Hacé clic en ⚙️ Config para ingresar la URL de tu Apps Script.');
+
+  document.getElementById('loadingStatus').textContent = 'Conectando con Google Sheets...';
+  const res = await fetch(SCRIPT_URL + '?sheet=US100');
+  if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
+  const json = await res.json();
+  if (!json.data || !Array.isArray(json.data)) throw new Error('Formato de datos inesperado. Revisá el script de Google Sheets.');
+  return json.data;
+}
+
+function parseRow(row) {
+  // Parsea cada fila del JSON que devuelve el Apps Script
+  const fecha = row['FECHA'] || row['fecha'] || '';
+  const dia   = (row['DIA']  || row['dia']  || '').toUpperCase().trim();
+  const trade = (row['TRADE']|| row['trade']|| '').toUpperCase().trim();
+  const sesion= (row['SESION QUE TESTEA']||row['sesion']||row['SESION']||'').toUpperCase().trim();
+  const tpsl  = (row['TP/SL']|| row['tpsl']|| '').toUpperCase().trim();
+  const pips  = parseFloat(row['PIPS'] || row['pips'] || 0) || 0;
+  const pct   = parseFloat(row['%']    || row['pct']  || 0) || 0;
+
+  // Hora de entrada — ya viene en UTC-3 desde el Apps Script
+  let hora = null;
+  const horaNum = row['hora'];
+  if (horaNum !== null && horaNum !== undefined && horaNum !== '') {
+    const parsed = parseInt(horaNum);
+    if (!isNaN(parsed)) hora = parsed;
+  }
+  // Fallback: si viene como string "HH:MM:SS"
+  if (hora === null) {
+    const horaRaw = row['HORARIO DE ENTRADA'] || '';
+    if (horaRaw) {
+      const match = String(horaRaw).match(/(\d{1,2})[:hH]/);
+      if (match) hora = parseInt(match[1]);
+    }
+  }
+
+  // Fecha → year + month
+  let year = null, month = null;
+  if (fecha) {
+    const d = new Date(fecha);
+    if (!isNaN(d)) { year = d.getFullYear(); month = d.getMonth()+1; }
+  }
+
+  if (!fecha || !tpsl || (tpsl !== 'TP' && tpsl !== 'SL')) return null;
+
+  const fotos = String(row['FOTOS'] || row['fotos'] || '').trim();
+
+  return { fecha: fecha.slice(0,10), dia, trade, sesion, tpsl, pips, pct, hora, year, month, fotos };
+}
+
+async function refreshData() {
+  const overlay = document.getElementById('loadingOverlay');
+  overlay.classList.remove('hidden');
+  document.getElementById('errorBanner').style.display = 'none';
+
+  try {
+    const raw = await fetchData();
+    RAW_DATA = raw.map(parseRow).filter(Boolean);
+
+    if (RAW_DATA.length === 0) throw new Error('No se encontraron filas válidas. Verificá que la hoja tenga datos y que el script esté publicado correctamente.');
+
+    // Populate year filter
+    const years = [...new Set(RAW_DATA.map(t=>t.year).filter(Boolean))].sort();
+    const yearSel = document.getElementById('filterYear');
+    yearSel.innerHTML = '<option value="ALL">Todos</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
+
+    // Monthly year filter
+    const monSel = document.getElementById('monthYearFilter');
+    monSel.innerHTML = '<option value="ALL">Todos los meses</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
+
+    // Gallery year filter
+    const galYearSel = document.getElementById('galleryFilterYear');
+    galYearSel.innerHTML = '<option value="ALL">Todos los años</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
+
+    document.getElementById('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-AR');
+    document.getElementById('headerSubtitle').textContent = `Período: ${RAW_DATA[0]?.fecha} — ${RAW_DATA[RAW_DATA.length-1]?.fecha} · ${RAW_DATA.length} operaciones`;
+    document.getElementById('footerCount').textContent = RAW_DATA.length;
+
+    applyFilters();
+    overlay.classList.add('hidden');
+
+  } catch (err) {
+    overlay.classList.add('hidden');
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    document.getElementById('errorMsg').textContent = err.message;
+    console.error(err);
+
+    // If no data loaded yet, open config
+    if (RAW_DATA.length === 0) openConfig();
+  }
+}
+
+// =============================================
+// FILTERING
+// =============================================
+function applyFilters() {
+  const ses = document.getElementById('filterSesion').value;
+  const dir = document.getElementById('filterDir').value;
+  const yr  = document.getElementById('filterYear').value;
+  filteredData = RAW_DATA.filter(t =>
+    (ses === 'ALL' || t.sesion === ses) &&
+    (dir === 'ALL' || t.trade === dir) &&
+    (yr  === 'ALL' || t.year === parseInt(yr))
+  );
+  renderAll();
+}
+
+// =============================================
+// STATS
+// =============================================
+function computeStats(data) {
+  const n  = data.length;
+  const tp = data.filter(t=>t.tpsl==='TP').length;
+  const sl = data.filter(t=>t.tpsl==='SL').length;
+  const wr = n ? tp/n*100 : 0;
+  const gain = data.filter(t=>t.tpsl==='TP').reduce((s,t)=>s+t.pct,0);
+  const loss = Math.abs(data.filter(t=>t.tpsl==='SL').reduce((s,t)=>s+t.pct,0));
+  const pf   = loss > 0 ? gain/loss : 0;
+  const net  = data.reduce((s,t)=>s+t.pct,0);
+  const avgPips = n ? (data.reduce((s,t)=>s+t.pips,0)/n).toFixed(1) : 0;
+  const lon  = data.filter(t=>t.sesion==='LONDRES');
+  const ny   = data.filter(t=>t.sesion==='NY');
+  const wrLon= lon.length ? lon.filter(t=>t.tpsl==='TP').length/lon.length*100 : 0;
+  const wrNy = ny.length  ? ny.filter(t=>t.tpsl==='TP').length/ny.length*100   : 0;
+
+  let maxSL=0, maxTP=0, curSL=0, curTP=0, cur=0;
+  const streaks=[];
+  for (const t of data) {
+    if (t.tpsl==='SL') { curSL++; curTP=0; maxSL=Math.max(maxSL,curSL); cur=Math.min(0,cur)-1; }
+    else               { curTP++; curSL=0; maxTP=Math.max(maxTP,curTP); cur=Math.max(0,cur)+1; }
+    streaks.push(cur);
+  }
+  return { n, tp, sl, wr, pf, net, avgPips, lon, ny, wrLon, wrNy, maxSL, maxTP, streaks };
+}
+
+// =============================================
+// CHART HELPERS
+// =============================================
+const baseOpts = {
+  responsive:true, maintainAspectRatio:true,
+  plugins: { legend:{ labels:{ color:'#94a3b8', font:{size:11} } }, tooltip:{ backgroundColor:'#1e2230', titleColor:'#e2e8f0', bodyColor:'#94a3b8', borderColor:'#374151', borderWidth:1 } },
+  scales: { x:{ ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(255,255,255,0.04)' } }, y:{ ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(255,255,255,0.04)' } } }
+};
+function deepMerge(a,b) {
+  const r={...a}; for(const k in b) { if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])) r[k]=deepMerge(a[k]||{},b[k]); else r[k]=b[k]; } return r;
+}
+function mkChart(id, type, data, opts={}) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+  const ctx = document.getElementById(id).getContext('2d');
+  chartInstances[id] = new Chart(ctx, { type, data, options: deepMerge(baseOpts, opts) });
+}
+
+// =============================================
+// RENDER FUNCTIONS
+// =============================================
+function renderKPIs(st) {
+  document.getElementById('kpi-pf').textContent      = st.pf.toFixed(2);
+  document.getElementById('kpi-wr').textContent      = st.wr.toFixed(1)+'%';
+  document.getElementById('kpi-tp-n').textContent    = '✓ TP: '+st.tp;
+  document.getElementById('kpi-sl-n').textContent    = '✗ SL: '+st.sl;
+  document.getElementById('kpi-wr-lon').textContent  = st.wrLon.toFixed(1)+'%';
+  document.getElementById('kpi-lon-n').textContent   = st.lon.filter(t=>t.tpsl==='TP').length+' TP / '+st.lon.length+' ops';
+  document.getElementById('kpi-wr-ny').textContent   = st.wrNy.toFixed(1)+'%';
+  document.getElementById('kpi-ny-n').textContent    = st.ny.filter(t=>t.tpsl==='TP').length+' TP / '+st.ny.length+' ops';
+  document.getElementById('kpi-sl-streak').textContent = st.maxSL;
+  document.getElementById('kpi-tp-streak').textContent = st.maxTP;
+  document.getElementById('kpi-net').textContent     = (st.net*100).toFixed(2)+'%';
+  document.getElementById('kpi-total').textContent   = st.n;
+  document.getElementById('kpi-avg-pips').textContent= 'Avg PIPS: '+st.avgPips;
+  document.getElementById('streakMaxSL').textContent = st.maxSL+' cons.';
+  document.getElementById('streakMaxTP').textContent = st.maxTP+' cons.';
+}
+
+function renderEquityChart() {
+  let running=0;
+  const cum = filteredData.map(t => {
+    running += (equityMode==='net' ? t.pct : (t.tpsl==='TP'?t.pct:0));
+    return parseFloat((running*100).toFixed(2));
+  });
+  const color = equityMode==='net' ? '#00d4aa' : '#ffc14d';
+  mkChart('equityChart','line',{
+    labels: filteredData.map(t=>t.fecha),
+    datasets:[{ label: equityMode==='net'?'Equity Net %':'Solo TP %', data:cum, borderColor:color, backgroundColor:color+'18', fill:true, tension:0.35, pointRadius:0, pointHoverRadius:4, borderWidth:2 }]
+  },{
+    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:ctx=>ctx.parsed.y.toFixed(2)+'%' } } },
+    scales:{ x:{ticks:{display:false},grid:{display:false}}, y:{ticks:{ color:'#64748b', callback:v=>v+'%' }} }
+  });
+}
+
+function switchEquity(mode, btn) {
+  equityMode = mode;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderEquityChart();
+}
+
+function renderSessionDonut(st) {
+  const lonTP=st.lon.filter(t=>t.tpsl==='TP').length, lonSL=st.lon.filter(t=>t.tpsl==='SL').length;
+  const nyTP =st.ny.filter(t=>t.tpsl==='TP').length,  nySL =st.ny.filter(t=>t.tpsl==='SL').length;
+  mkChart('sessionDonut','doughnut',{
+    labels:['LON TP','LON SL','NY TP','NY SL'],
+    datasets:[{ data:[lonTP,lonSL,nyTP,nySL], backgroundColor:['rgba(0,212,170,0.8)','rgba(255,77,109,0.5)','rgba(0,212,170,0.4)','rgba(255,77,109,0.8)'], borderWidth:0, hoverOffset:6 }]
+  },{ scales:{x:{display:false},y:{display:false}}, plugins:{ legend:{ position:'bottom', labels:{ color:'#94a3b8', font:{size:10}, padding:8 } } } });
+  document.getElementById('sessionStats').innerHTML = `
+    <div class="flex justify-between text-xs"><span class="text-[var(--muted)]">🏙️ Londres</span><span><span class="text-[var(--tp)]">${lonTP} TP</span> · <span class="text-[var(--sl)]">${lonSL} SL</span> · <b>${st.wrLon.toFixed(1)}% WR</b></span></div>
+    <div class="flex justify-between text-xs"><span class="text-[var(--muted)]">🗽 New York</span><span><span class="text-[var(--tp)]">${nyTP} TP</span> · <span class="text-[var(--sl)]">${nySL} SL</span> · <b>${st.wrNy.toFixed(1)}% WR</b></span></div>`;
+}
+
+function renderDayChart() {
+  const days=['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES'];
+  const labels=['Lunes','Martes','Miércoles','Jueves','Viernes'];
+  const wrs=[],tps=[],tots=[];
+  for (const d of days) {
+    const dt=filteredData.filter(t=>t.dia===d);
+    const tw=dt.filter(t=>t.tpsl==='TP').length;
+    wrs.push(dt.length ? parseFloat((tw/dt.length*100).toFixed(1)) : 0);
+    tps.push(tw); tots.push(dt.length);
+  }
+  mkChart('dayChart','bar',{
+    labels,
+    datasets:[{ label:'WR %', data:wrs, backgroundColor:wrs.map(v=>v>=45?'rgba(0,212,170,0.75)':v>=40?'rgba(255,193,77,0.75)':'rgba(255,77,109,0.75)'), borderRadius:6, borderSkipped:false }]
+  },{ plugins:{ legend:{display:false}, tooltip:{ callbacks:{ afterBody:ctx=>`TP: ${tps[ctx[0].dataIndex]} / Total: ${tots[ctx[0].dataIndex]}` } } }, scales:{ y:{ min:0, max:70, ticks:{ callback:v=>v+'%' } } } });
+}
+
+function renderHourChart() {
+  const hourMap={};
+  for (const t of filteredData) {
+    if (t.hora===null) continue;
+    if (!hourMap[t.hora]) hourMap[t.hora]={tp:0,tot:0};
+    hourMap[t.hora].tot++;
+    if (t.tpsl==='TP') hourMap[t.hora].tp++;
+  }
+  const hours=Object.keys(hourMap).map(Number).sort((a,b)=>a-b);
+  const wrs=hours.map(h=>hourMap[h].tot?parseFloat((hourMap[h].tp/hourMap[h].tot*100).toFixed(1)):0);
+  const cnts=hours.map(h=>hourMap[h].tot);
+  mkChart('hourChart','bar',{
+    labels: hours.map(h=>h+':00'),
+    datasets:[{ label:'WR %', data:wrs, backgroundColor:wrs.map(v=>v>=50?'rgba(0,212,170,0.8)':v>=42?'rgba(255,193,77,0.7)':'rgba(255,77,109,0.7)'), borderRadius:5, borderSkipped:false }]
+  },{ plugins:{ legend:{display:false}, tooltip:{ callbacks:{ afterBody:ctx=>`Ops: ${cnts[ctx[0].dataIndex]}` } } }, scales:{ y:{ min:0, max:70, ticks:{ callback:v=>v+'%' } } } });
+}
+
+function renderMonthlyChart() {
+  const yrF = document.getElementById('monthYearFilter').value;
+  const src  = yrF==='ALL' ? filteredData : filteredData.filter(t=>t.year===parseInt(yrF));
+  const mMap={};
+  for (const t of src) {
+    const k=t.year+'-'+String(t.month).padStart(2,'0');
+    if (!mMap[k]) mMap[k]=0;
+    mMap[k]+=t.pct;
+  }
+  const keys=Object.keys(mMap).sort();
+  const vals=keys.map(k=>parseFloat((mMap[k]*100).toFixed(2)));
+  const mNames=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const labels=keys.map(k=>{ const [y,m]=k.split('-'); return mNames[parseInt(m)-1]+" '"+y.slice(2); });
+  mkChart('monthlyChart','bar',{
+    labels, datasets:[{ label:'P&L %', data:vals, backgroundColor:vals.map(v=>v>=0?'rgba(0,212,170,0.75)':'rgba(255,77,109,0.75)'), borderRadius:5, borderSkipped:false }]
+  },{ plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:ctx=>ctx.parsed.y.toFixed(2)+'%' } } }, scales:{ y:{ ticks:{ callback:v=>v+'%' } } } });
+}
+
+function renderStreakChart(st) {
+  mkChart('streakChart','line',{
+    labels: filteredData.map((_,i)=>i+1),
+    datasets:[{ label:'Racha', data:st.streaks, borderColor:'#ffc14d', backgroundColor:'rgba(255,193,77,0.08)', fill:true, tension:0.2, pointRadius:0, pointHoverRadius:3, borderWidth:1.5 }]
+  },{ plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:ctx=>ctx.parsed.y>0?'+'+ctx.parsed.y+' TP':ctx.parsed.y+' SL' } } }, scales:{ x:{ticks:{display:false},grid:{display:false}} } });
+}
+
+function renderLongShortChart() {
+  const long=filteredData.filter(t=>t.trade==='LONG'), short=filteredData.filter(t=>t.trade==='SHORT');
+  const lTP=long.filter(t=>t.tpsl==='TP').length,  lSL=long.filter(t=>t.tpsl==='SL').length;
+  const sTP=short.filter(t=>t.tpsl==='TP').length, sSL=short.filter(t=>t.tpsl==='SL').length;
+  const lWR=long.length?(lTP/long.length*100).toFixed(1):'0';
+  const sWR=short.length?(sTP/short.length*100).toFixed(1):'0';
+  mkChart('longShortChart','bar',{
+    labels:['TP','SL','WR %','Total'],
+    datasets:[
+      { label:'LONG',  data:[lTP,lSL,parseFloat(lWR),long.length],  backgroundColor:'rgba(0,212,170,0.7)',  borderRadius:5, borderSkipped:false },
+      { label:'SHORT', data:[sTP,sSL,parseFloat(sWR),short.length], backgroundColor:'rgba(255,193,77,0.7)', borderRadius:5, borderSkipped:false }
+    ]
+  },{});
+  document.getElementById('longShortStats').innerHTML=`
+    <div class="rounded-lg p-3 bg-[rgba(0,212,170,0.06)] border border-[rgba(0,212,170,0.15)]">
+      <div class="text-xs text-[var(--muted)]">LONG</div>
+      <div class="mono font-bold text-[var(--tp)]">${lWR}% WR</div>
+      <div class="text-xs text-[var(--muted)] mt-1">${lTP} TP · ${lSL} SL</div>
+    </div>
+    <div class="rounded-lg p-3 bg-[rgba(255,193,77,0.06)] border border-[rgba(255,193,77,0.15)]">
+      <div class="text-xs text-[var(--muted)]">SHORT</div>
+      <div class="mono font-bold text-[var(--accent3)]">${sWR}% WR</div>
+      <div class="text-xs text-[var(--muted)] mt-1">${sTP} TP · ${sSL} SL</div>
+    </div>`;
+}
+
+function renderPipsHistogram() {
+  const bins=[0,3,5,7,10,15,20,30,50];
+  const counts=new Array(bins.length-1).fill(0);
+  for (const t of filteredData) {
+    for (let i=0;i<bins.length-1;i++) { if(t.pips>=bins[i]&&t.pips<bins[i+1]) { counts[i]++; break; } }
+  }
+  mkChart('pipsHistogram','bar',{
+    labels:bins.slice(0,-1).map((b,i)=>`${b}-${bins[i+1]}`),
+    datasets:[{ label:'Ops', data:counts, backgroundColor:'rgba(148,163,184,0.5)', borderRadius:5, borderSkipped:false }]
+  },{ plugins:{ legend:{display:false} } });
+}
+
+function renderYearlyChart() {
+  const years=[...new Set(RAW_DATA.map(t=>t.year).filter(Boolean))].sort();
+  const metrics=['WR %','TP','SL','Net %'];
+  const colors=['#00d4aa','#00d4aa88','#ff4d6d88','#ffc14d'];
+  const datasets=metrics.map((m,mi)=>({
+    label:m,
+    data:years.map(y=>{
+      const yd=filteredData.filter(t=>t.year===y); if(!yd.length) return 0;
+      const tp=yd.filter(t=>t.tpsl==='TP').length;
+      if(mi===0) return parseFloat((tp/yd.length*100).toFixed(1));
+      if(mi===1) return tp;
+      if(mi===2) return yd.filter(t=>t.tpsl==='SL').length;
+      return parseFloat((yd.reduce((s,t)=>s+t.pct,0)*100).toFixed(2));
+    }),
+    backgroundColor:colors[mi], borderRadius:5, borderSkipped:false
+  }));
+  mkChart('yearlyChart','bar',{ labels:years.map(String), datasets },{});
+}
+
+function renderHeatmap() {
+  const days     = ['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES'];
+  const dayShort = ['Lun','Mar','Mié','Jue','Vie'];
+  const allHours = [...new Set(filteredData.map(t=>t.hora).filter(h=>h!==null&&h!==undefined))].sort((a,b)=>a-b);
+
+  if (allHours.length === 0) {
+    document.getElementById('heatmapContainer').innerHTML = '<p style="color:var(--muted);font-size:12px">Sin datos de hora disponibles.</p>';
+    return;
+  }
+
+  const map = {};
+  for (const t of filteredData) {
+    if (t.hora === null || t.hora === undefined) continue;
+    const k = t.dia + '_' + t.hora;
+    if (!map[k]) map[k] = {tp:0, tot:0};
+    map[k].tot++;
+    if (t.tpsl === 'TP') map[k].tp++;
+  }
+
+  const cellSize  = '36px';
+  const cellStyle = `width:${cellSize};height:${cellSize};border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Space Mono',monospace;cursor:default;transition:transform 0.15s;`;
+  const emptyStyle= `width:${cellSize};height:${cellSize};border-radius:7px;background:rgba(255,255,255,0.03);display:inline-block;`;
+  const thStyle   = `font-size:11px;color:var(--muted);text-align:center;padding:0 4px 6px 4px;font-family:'Inter',sans-serif;`;
+  const tdStyle   = `padding:2px;`;
+  const rowLblStyle = `font-size:11px;color:var(--muted);padding-right:8px;white-space:nowrap;font-family:'Inter',sans-serif;vertical-align:middle;`;
+
+  let html = `<table style="border-collapse:separate;border-spacing:0;">`;
+
+  // Header row
+  html += `<tr><td style="${thStyle}"></td>`;
+  for (const h of allHours) {
+    html += `<td style="${thStyle}">${h}h</td>`;
+  }
+  html += '</tr>';
+
+  // Data rows
+  for (let di = 0; di < days.length; di++) {
+    html += `<tr><td style="${rowLblStyle}">${dayShort[di]}</td>`;
+    for (const h of allHours) {
+      const d = map[days[di] + '_' + h];
+      if (!d || d.tot === 0) {
+        html += `<td style="${tdStyle}"><div style="${emptyStyle}" title="Sin datos en ${dayShort[di]} ${h}h"></div></td>`;
+      } else {
+        const wr    = d.tp / d.tot;
+        const pct   = Math.round(wr * 100);
+        const alpha = 0.15 + wr * 0.75;
+        // Color: rojo → amarillo → verde según WR
+        const r = Math.round(255 * (1 - wr));
+        const g = Math.round(212 * wr);
+        const b = Math.round(wr > 0.5 ? 170 * wr : 109 * (1 - wr));
+        const bg    = `rgba(${r},${g},${b},${alpha.toFixed(2)})`;
+        const color = wr > 0.35 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.6)';
+        const tip   = `${dayShort[di]} ${h}h — WR: ${pct}% (${d.tp} TP / ${d.tot} ops)`;
+        html += `<td style="${tdStyle}"><div style="${cellStyle}background:${bg};color:${color};" title="${tip}" onmouseover="this.style.transform='scale(1.12)'" onmouseout="this.style.transform='scale(1)'">${pct}%</div></td>`;
+      }
+    }
+    html += '</tr>';
+  }
+
+  // Legend
+  html += `</table>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:10px;color:var(--muted);">
+    <span>Peor WR</span>
+    <div style="width:80px;height:8px;border-radius:4px;background:linear-gradient(to right,rgba(255,77,109,0.7),rgba(255,193,77,0.7),rgba(0,212,170,0.8))"></div>
+    <span>Mejor WR</span>
+  </div>`;
+
+  document.getElementById('heatmapContainer').innerHTML = html;
+}
+
+function renderTable() {
+  const tF=document.getElementById('tableFilter').value;
+  const sF=document.getElementById('tableSesionFilter').value;
+  const rows=filteredData.filter(t=>(tF==='ALL'||t.tpsl===tF)&&(sF==='ALL'||t.sesion===sF)).slice().reverse().slice(0,200);
+  document.getElementById('tradeTableBody').innerHTML=rows.map(t=>`
+    <tr class="hover:bg-white hover:bg-opacity-5 transition-colors">
+      <td class="px-3 py-2 mono text-xs">${t.fecha}</td>
+      <td class="px-3 py-2 text-xs text-[var(--muted)]">${(t.dia||'').slice(0,3)}</td>
+      <td class="px-3 py-2"><span class="tag ${t.trade==='LONG'?'badge-tp':'badge-neutral'} text-xs">${t.trade}</span></td>
+      <td class="px-3 py-2 text-xs">${t.sesion}</td>
+      <td class="px-3 py-2 text-xs text-[var(--muted)]">${t.hora!==null?t.hora+':00':'—'}</td>
+      <td class="px-3 py-2 text-right mono text-xs">${t.pips}</td>
+      <td class="px-3 py-2 text-center"><span class="tag ${t.tpsl==='TP'?'badge-tp':'badge-sl'} text-xs">${t.tpsl}</span></td>
+    </tr>`).join('');
+  document.getElementById('tableCount').textContent=`Mostrando ${rows.length} operaciones`;
+}
+
+// =============================================
+// GALLERY
+// =============================================
+const GALLERY_PAGE_SIZE = 24;
+let galleryPage = 0;
+let galleryFiltered = [];
+let lbIndex = 0;
+
+function getGalleryFiltered() {
+  const tF = document.getElementById('galleryFilterTpsl').value;
+  const sF = document.getElementById('galleryFilterSesion').value;
+  const dF = document.getElementById('galleryFilterDir').value;
+  const yF = document.getElementById('galleryFilterYear').value;
+  const sort = document.getElementById('gallerySort').value;
+
+  let rows = filteredData.filter(t =>
+    (tF === 'ALL' || t.tpsl === tF) &&
+    (sF === 'ALL' || t.sesion === sF) &&
+    (dF === 'ALL' || t.trade === dF) &&
+    (yF === 'ALL' || t.year === parseInt(yF)) &&
+    t.fotos && t.fotos.startsWith('http')
+  );
+
+  if (sort === 'recent')    rows = rows.slice().reverse();
+  else if (sort === 'oldest') rows = [...rows];
+  else if (sort === 'pips_desc') rows = rows.slice().sort((a,b) => b.pips - a.pips);
+  else if (sort === 'pips_asc')  rows = rows.slice().sort((a,b) => a.pips - b.pips);
+
+  return rows;
+}
+
+function renderGallery() {
+  galleryPage = 0;
+  galleryFiltered = getGalleryFiltered();
+  renderGalleryPage();
+}
+
+function renderGalleryPage() {
+  const total = galleryFiltered.length;
+  const start = galleryPage * GALLERY_PAGE_SIZE;
+  const page  = galleryFiltered.slice(start, start + GALLERY_PAGE_SIZE);
+
+  document.getElementById('galleryCount').textContent =
+    total === 0
+      ? 'Sin trades con link de TradingView para los filtros seleccionados'
+      : `${total} trades con imagen · mostrando ${start+1}–${Math.min(start+GALLERY_PAGE_SIZE, total)}`;
+
+  if (total === 0) {
+    document.getElementById('galleryGrid').innerHTML =
+      `<div class="gallery-empty col-span-full">
+        <div style="font-size:2rem;margin-bottom:8px">📊</div>
+        <p>No hay trades con link de TradingView para estos filtros.</p>
+        <p class="text-xs mt-1">Asegurate de tener la columna FOTOS en tu Google Sheet con las URLs.</p>
+      </div>`;
+    document.getElementById('galleryPagination').innerHTML = '';
+    return;
+  }
+
+  // Día abreviado en español
+  const diaShort = { LUNES:'Lun', MARTES:'Mar', MIERCOLES:'Mié', JUEVES:'Jue', VIERNES:'Vie' };
+  const mesShort = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  document.getElementById('galleryGrid').innerHTML = page.map((t, i) => {
+    const globalIdx = start + i;
+    const [y, m, d] = t.fecha.split('-');
+    const fechaStr  = `${parseInt(d)} ${mesShort[parseInt(m)]} ${y}`;
+    const isTP      = t.tpsl === 'TP';
+    const tradeColor = t.trade === 'LONG' ? 'var(--tp)' : 'var(--accent3)';
+    return `
+    <div class="trade-card ${isTP ? 'tp-card' : 'sl-card'}" onclick="openLightbox(${globalIdx})">
+      <div class="tv-preview">
+        <div class="tv-preview-bg"></div>
+        <!-- Mini fake chart decoration -->
+        <svg class="tv-chart-icon" width="80" height="50" viewBox="0 0 80 50">
+          <polyline points="0,40 10,35 20,38 30,20 40,25 50,10 60,15 70,5 80,8" fill="none" stroke="${isTP ? '#00d4aa' : '#ff4d6d'}" stroke-width="2.5"/>
+        </svg>
+        <!-- Hover overlay -->
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s" class="card-hover-overlay">
+          <span style="color:white;font-size:12px;font-weight:600;background:rgba(0,0,0,0.6);padding:6px 12px;border-radius:20px">🔍 Ver detalle</span>
+        </div>
+      </div>
+      <div style="padding:10px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span class="mono" style="font-size:11px;color:var(--muted)">${fechaStr}</span>
+          <span class="tag ${isTP ? 'badge-tp' : 'badge-sl'}" style="font-size:10px;padding:2px 7px">${t.tpsl}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:700;color:${tradeColor}">${t.trade}</span>
+          <span style="font-size:10px;color:var(--muted)">·</span>
+          <span style="font-size:11px;color:var(--muted)">${t.sesion}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="mono" style="font-size:12px;font-weight:700;color:${isTP ? 'var(--tp)' : 'var(--sl)'}">${t.pips} pips</span>
+          <span style="font-size:10px;color:var(--muted)">${t.hora !== null ? t.hora+':00' : ''}</span>
+        </div>
+        <button onclick="event.stopPropagation();window.open('${t.fotos}','_blank','noopener,noreferrer')" style="margin-top:8px;width:100%;padding:5px 0;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='var(--accent)';this.style.color='#0a0c10';this.style.borderColor='var(--accent)'" onmouseout="this.style.background='transparent';this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
+          Ver en TradingView ↗
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Hover overlay effect
+  document.querySelectorAll('.trade-card').forEach(card => {
+    const overlay = card.querySelector('.card-hover-overlay');
+    card.addEventListener('mouseenter', () => { if(overlay) overlay.style.opacity='1'; });
+    card.addEventListener('mouseleave', () => { if(overlay) overlay.style.opacity='0'; });
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(total / GALLERY_PAGE_SIZE);
+  if (totalPages <= 1) {
+    document.getElementById('galleryPagination').innerHTML = '';
+    return;
+  }
+  let pHtml = '';
+  for (let p = 0; p < totalPages; p++) {
+    const active = p === galleryPage;
+    pHtml += `<button onclick="goGalleryPage(${p})" style="margin:0 3px;padding:6px 12px;border-radius:8px;border:1px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'var(--accent)' : 'transparent'};color:${active ? '#0a0c10' : 'var(--muted)'};font-size:12px;cursor:pointer;font-weight:${active?'700':'400'}">${p+1}</button>`;
+  }
+  document.getElementById('galleryPagination').innerHTML = pHtml;
+}
+
+function goGalleryPage(p) {
+  galleryPage = p;
+  renderGalleryPage();
+  document.getElementById('galleryGrid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+let lbCurrentUrl = '';
+
+function openTV() {
+  if (lbCurrentUrl) window.open(lbCurrentUrl, '_blank', 'noopener,noreferrer');
+}
+
+// ---- Lightbox ----
+function openLightbox(idx) {
+  lbIndex = idx;
+  updateLightbox();
+  document.getElementById('galleryLightbox').classList.add('open');
+  document.addEventListener('keydown', lbKeyHandler);
+}
+
+function closeLightbox() {
+  document.getElementById('galleryLightbox').classList.remove('open');
+  document.removeEventListener('keydown', lbKeyHandler);
+}
+
+function lbKeyHandler(e) {
+  if (e.key === 'ArrowRight') lbNav(1);
+  if (e.key === 'ArrowLeft')  lbNav(-1);
+  if (e.key === 'Escape')     closeLightbox();
+}
+
+function lbNav(dir) {
+  lbIndex = Math.max(0, Math.min(galleryFiltered.length - 1, lbIndex + dir));
+  updateLightbox();
+}
+
+function updateLightbox() {
+  const t = galleryFiltered[lbIndex];
+  if (!t) return;
+  const isTP = t.tpsl === 'TP';
+  const [y, m, d] = t.fecha.split('-');
+  const mesShort = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  document.getElementById('lbInfo').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:8px">
+      <span class="mono" style="color:var(--muted);font-size:13px">${parseInt(d)} ${mesShort[parseInt(m)]} ${y}</span>
+      <span class="tag ${isTP ? 'badge-tp' : 'badge-sl'}">${t.tpsl}</span>
+      <span style="font-weight:700;color:${t.trade==='LONG'?'var(--tp)':'var(--accent3)'}">${t.trade}</span>
+      <span style="color:var(--muted);font-size:13px">${t.sesion}</span>
+      <span class="mono" style="font-weight:700;color:${isTP?'var(--tp)':'var(--sl)'}">${t.pips} pips</span>
+      <span style="color:var(--muted);font-size:12px">${lbIndex+1} / ${galleryFiltered.length}</span>
+    </div>`;
+
+  lbCurrentUrl = t.fotos;
+
+  document.getElementById('lbPrev').style.opacity = lbIndex === 0 ? '0.3' : '1';
+  document.getElementById('lbNext').style.opacity = lbIndex === galleryFiltered.length-1 ? '0.3' : '1';
+}
+
+function renderAll() {
+  const st=computeStats(filteredData);
+  renderKPIs(st);
+  renderEquityChart();
+  renderSessionDonut(st);
+  renderDayChart();
+  renderHourChart();
+  renderMonthlyChart();
+  renderStreakChart(st);
+  renderLongShortChart();
+  renderPipsHistogram();
+  renderYearlyChart();
+  renderHeatmap();
+  renderTable();
+  renderGallery();
+}
+
+// =============================================
+// LIVE ACCOUNT — MT5 via Apps Script
+// =============================================
+let LIVE_DATA = null;
+
+async function refreshLive() {
+  if (!SCRIPT_URL) return;
+  try {
+    document.getElementById('liveStatus').textContent = 'Conectando...';
+    const res  = await fetch(SCRIPT_URL + '?type=live');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    LIVE_DATA  = data;
+    renderLiveSection(data);
+  } catch(err) {
+    document.getElementById('liveStatus').textContent = 'Error al conectar: ' + err.message;
+    document.getElementById('liveDot').style.background = 'var(--sl)';
+  }
+}
+
+function renderLiveSection(data) {
+  if (!data || !data.account) {
+    document.getElementById('liveStatus').textContent = 'Sin datos — el EA aún no envió información';
+    document.getElementById('liveDot').style.background = 'var(--muted)';
+    return;
+  }
+
+  const acc = data.account;
+  const fmt = (n, dec=2) => parseFloat(n||0).toLocaleString('es-AR', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+
+  // Status dot → verde
+  document.getElementById('liveDot').style.background = 'var(--accent)';
+  document.getElementById('liveStatus').textContent    = 'Conectado · ' + (acc.broker || '') + ' · Última actualización: ' + (acc.timestamp || '—');
+
+  // KPIs
+  document.getElementById('live-balance').textContent    = '$' + fmt(acc.balance);
+  document.getElementById('live-currency').textContent   = acc.currency || 'USD';
+  document.getElementById('live-equity').textContent     = '$' + fmt(acc.equity);
+  document.getElementById('live-floating').textContent   = 'P&L abierto: $' + fmt(acc.floatingPL);
+  const dd = parseFloat(acc.drawdown||0);
+  document.getElementById('live-drawdown').textContent   = dd.toFixed(2) + '%';
+  document.getElementById('live-drawdown').style.color   = dd > 5 ? 'var(--sl)' : dd > 2 ? 'var(--accent3)' : 'var(--tp)';
+  document.getElementById('live-freemargin').textContent = '$' + fmt(acc.freeMargin);
+  document.getElementById('live-margin').textContent     = 'Usado: $' + fmt(acc.margin);
+  document.getElementById('live-opencount').textContent  = acc.openCount || 0;
+
+  // Stats de trades cerrados
+  const closed = data.closedTrades || [];
+  const wins   = closed.filter(t => parseFloat(t.netProfit) > 0);
+  const losses = closed.filter(t => parseFloat(t.netProfit) <= 0);
+  const wr     = closed.length ? (wins.length / closed.length * 100).toFixed(1) : '—';
+  const grossW = wins.reduce((s,t)   => s + parseFloat(t.netProfit||0), 0);
+  const grossL = Math.abs(losses.reduce((s,t) => s + parseFloat(t.netProfit||0), 0));
+  const pf     = grossL > 0 ? (grossW / grossL).toFixed(2) : '—';
+  const netPL  = closed.reduce((s,t) => s + parseFloat(t.netProfit||0), 0) + parseFloat(acc.floatingPL||0);
+
+  document.getElementById('live-wr').textContent        = wr + (wr !== '—' ? '%' : '');
+  document.getElementById('live-wr-detail').textContent = wins.length + ' win / ' + losses.length + ' loss · ' + closed.length + ' total';
+  document.getElementById('live-pf').textContent        = pf;
+  const netEl = document.getElementById('live-net');
+  netEl.textContent   = '$' + fmt(netPL);
+  netEl.style.color   = netPL >= 0 ? 'var(--tp)' : 'var(--sl)';
+
+  // Equity curve chart
+  renderLiveEquityChart(data.equityCurve || []);
+
+  // Trades abiertos
+  const openTrades = data.openTrades || [];
+  const openBody   = document.getElementById('liveOpenBody');
+  if (openTrades.length === 0) {
+    openBody.innerHTML = `<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--muted)">Sin posiciones abiertas</td></tr>`;
+  } else {
+    openBody.innerHTML = openTrades.map(t => {
+      const pl    = parseFloat(t.profit||0);
+      const color = pl >= 0 ? 'var(--tp)' : 'var(--sl)';
+      return `<tr class="hover:bg-white hover:bg-opacity-5">
+        <td style="padding:6px 8px;font-weight:600">${t.symbol}</td>
+        <td style="padding:6px 8px"><span class="tag ${t.type==='BUY'?'badge-tp':'badge-neutral'}" style="font-size:10px">${t.type}</span></td>
+        <td style="padding:6px 8px;text-align:right;font-family:'Space Mono',monospace;font-size:11px">${parseFloat(t.lots||0).toFixed(2)}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:'Space Mono',monospace;font-size:11px;color:${color};font-weight:700">$${fmt(pl)}</td>
+      </tr>`;
+    }).join('');
+  }
+  document.getElementById('liveOpenCount').textContent = openTrades.length + ' posición' + (openTrades.length !== 1 ? 'es' : '') + ' abierta' + (openTrades.length !== 1 ? 's' : '');
+
+  // Populate symbol filter
+  const symbols = [...new Set(closed.map(t=>t.symbol).filter(Boolean))].sort();
+  const symSel  = document.getElementById('liveSymbolFilter');
+  symSel.innerHTML = '<option value="ALL">Todos los pares</option>' + symbols.map(s=>`<option value="${s}">${s}</option>`).join('');
+
+  renderLiveHistory();
+}
+
+function renderLiveEquityChart(curve) {
+  if (!curve || curve.length === 0) return;
+  if (chartInstances['liveEquityChart']) { chartInstances['liveEquityChart'].destroy(); delete chartInstances['liveEquityChart']; }
+  const ctx = document.getElementById('liveEquityChart').getContext('2d');
+  chartInstances['liveEquityChart'] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: curve.map(r => r.timestamp),
+      datasets: [
+        { label:'Balance', data: curve.map(r=>parseFloat(r.balance||0)), borderColor:'#00d4aa', backgroundColor:'rgba(0,212,170,0.06)', fill:false, tension:0.3, pointRadius:0, borderWidth:2 },
+        { label:'Equity',  data: curve.map(r=>parseFloat(r.equity||0)),  borderColor:'#ffc14d', backgroundColor:'rgba(255,193,77,0.06)',  fill:false, tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[4,3] }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{ labels:{ color:'#94a3b8', font:{size:11} } }, tooltip:{ backgroundColor:'#1e2230', titleColor:'#e2e8f0', bodyColor:'#94a3b8', borderColor:'#374151', borderWidth:1, callbacks:{ label: ctx => ctx.dataset.label+': $'+ctx.parsed.y.toLocaleString('es-AR',{minimumFractionDigits:2}) } } },
+      scales:{ x:{ ticks:{display:false}, grid:{display:false} }, y:{ ticks:{ color:'#64748b', font:{size:10}, callback: v=>'$'+v.toLocaleString('es-AR') }, grid:{ color:'rgba(255,255,255,0.04)' } } }
+    }
+  });
+}
+
+function renderLiveHistory() {
+  if (!LIVE_DATA) return;
+  const filter = document.getElementById('liveHistoryFilter').value;
+  const symF   = document.getElementById('liveSymbolFilter').value;
+  const fmt    = (n,dec=2) => parseFloat(n||0).toLocaleString('es-AR',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+
+  let rows = (LIVE_DATA.closedTrades || []).filter(t => {
+    const pl  = parseFloat(t.netProfit||0);
+    const win = pl > 0;
+    return (filter === 'ALL' || (filter === 'WIN' && win) || (filter === 'LOSS' && !win)) &&
+           (symF === 'ALL' || t.symbol === symF);
+  });
+
+  document.getElementById('liveHistoryCount').textContent = rows.length + ' operaciones';
+  document.getElementById('liveHistoryBody').innerHTML = rows.slice(0, 200).map(t => {
+    const pl    = parseFloat(t.netProfit||0);
+    const isWin = pl > 0;
+    return `<tr class="hover:bg-white hover:bg-opacity-5 transition-colors">
+      <td style="padding:6px 12px;font-family:'Space Mono',monospace;font-size:11px">${t.ticket}</td>
+      <td style="padding:6px 12px;font-weight:600;font-size:12px">${t.symbol}</td>
+      <td style="padding:6px 12px"><span class="tag ${t.type==='BUY'?'badge-tp':'badge-neutral'}" style="font-size:10px">${t.type}</span></td>
+      <td style="padding:6px 12px;text-align:right;font-family:'Space Mono',monospace;font-size:11px">${parseFloat(t.lots||0).toFixed(2)}</td>
+      <td style="padding:6px 12px;text-align:right;font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:${isWin?'var(--tp)':'var(--sl)'}">$${fmt(pl)}</td>
+      <td style="padding:6px 12px;color:var(--muted);font-size:11px">${t.closeTime||'—'}</td>
+      <td style="padding:6px 12px;text-align:center"><span class="tag ${isWin?'badge-tp':'badge-sl'}" style="font-size:10px">${isWin?'WIN':'LOSS'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// =============================================
+// INIT
+// =============================================
+window.addEventListener('DOMContentLoaded', () => {
+  if (!SCRIPT_URL) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    openConfig();
+  } else {
+    refreshData();
+    refreshLive(); // Carga datos de cuenta real también
+  }
+});
+</script>
+</body>
+</html>
