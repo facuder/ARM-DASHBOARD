@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARM — Comparativa Multi Activo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0c10;--surface:#111318;--border:#1e2230;--accent:#00d4aa;--sl:#ff4d6d;--accent3:#ffc14d;--text:#e2e8f0;--muted:#64748b;
+    --eurusd:#00d4aa;--us100:#ffc14d;--xauusd:#f87171;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
+  .mono{font-family:'Space Mono',monospace;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+  .nav-btn{font-family:'Inter',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;color:#64748b;text-decoration:none;border:1px solid transparent;transition:all 0.2s;}
+  .nav-btn:hover{color:#e2e8f0;border-color:#1e2230;}
+  .nav-btn.active{background:#00d4aa;color:#0a0c10;border-color:#00d4aa;}
+  .grid-lines{background-image:radial-gradient(circle,#1e2230 1px,transparent 1px);background-size:28px 28px;}
+  .stat-val{font-size:1.6rem;font-weight:700;font-family:'Space Mono',monospace;line-height:1;}
+  .stat-label{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);}
+  .tag{display:inline-flex;align-items:center;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;}
+  .scrollbar-thin::-webkit-scrollbar{width:4px;height:4px;}
+  .scrollbar-thin::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .fade-in{animation:fadeIn 0.35s ease both;}
+  .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loadingOverlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;transition:opacity 0.5s;}
+  #loadingOverlay.hidden{opacity:0;pointer-events:none;}
+  #configModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;}
+  #configModal.open{display:flex;}
+  #configBox{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:500px;width:90%;}
+  input[type=text]{width:100%;background:#0a0c10;border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Space Mono',monospace;outline:none;margin-top:6px;}
+  input[type=text]:focus{border-color:var(--accent);}
+  .btn{border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;border:1px solid var(--border);background:transparent;color:var(--muted);}
+  .btn-primary{background:var(--accent);color:#0a0c10;border-color:var(--accent);}
+  .asset-pill-eurusd{background:rgba(0,212,170,0.12);color:var(--eurusd);border:1px solid rgba(0,212,170,0.3);}
+  .asset-pill-us100{background:rgba(255,193,77,0.12);color:var(--us100);border:1px solid rgba(255,193,77,0.3);}
+  .asset-pill-xauusd{background:rgba(248,113,113,0.12);color:var(--xauusd);border:1px solid rgba(248,113,113,0.3);}
+</style>
+</head>
+<body class="grid-lines">
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <p class="mono text-sm text-[var(--accent)] mt-4">Cargando los 3 activos...</p>
+  <p class="text-xs text-[var(--muted)] mt-2" id="loadingMsg">Conectando con Google Sheets</p>
+</div>
+
+<div id="configModal">
+  <div id="configBox">
+    <h2 class="text-lg font-bold mono mb-2">⚙️ Configurar URL</h2>
+    <p class="text-xs text-[var(--muted)] mb-4">Misma URL de Apps Script que usás en los otros dashboards.</p>
+    <label class="text-xs text-[var(--muted)] uppercase tracking-wider">URL del Apps Script</label>
+    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec"/>
+    <div class="flex gap-3 mt-5 justify-end">
+      <button class="btn" onclick="closeConfig()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav style="background:rgba(10,12,16,0.97);border-bottom:1px solid #1e2230;position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);">
+  <div style="max-width:1600px;margin:0 auto;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:52px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <span style="font-family:'Space Mono',monospace;font-weight:700;font-size:14px;color:#e2e8f0">ARM <span style="color:#00d4aa">Backtest</span></span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        <a href="index.html"       class="nav-btn">EUR/USD</a>
+        <a href="us100.html"       class="nav-btn">US100</a>
+        <a href="xauusd.html"      class="nav-btn">XAU/USD</a>
+        <a href="comparativa.html" class="nav-btn active">📊 Comparativa</a>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="text-xs text-[var(--muted)]" id="navUpdate">—</span>
+      <button onclick="loadAll()" class="btn btn-primary text-xs px-3 py-1">↻ Actualizar</button>
+      <button onclick="openConfig()" class="btn text-xs px-3 py-1">⚙️</button>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-screen-2xl mx-auto px-4 py-6">
+
+  <!-- HEADER -->
+  <div class="mb-8 fade-in">
+    <div class="flex items-center gap-3 mb-2 flex-wrap">
+      <span class="mono text-xs text-[var(--accent)] tracking-widest uppercase">Comparativa Multi Activo</span>
+      <span class="tag asset-pill-eurusd">EUR/USD</span>
+      <span class="tag asset-pill-us100">US100</span>
+      <span class="tag asset-pill-xauusd">XAU/USD</span>
+    </div>
+    <h1 class="text-3xl font-bold mono">Análisis <span class="text-[var(--accent)]">Comparativo</span></h1>
+    <p class="text-[var(--muted)] text-sm mt-1">Estadísticas consolidadas de los 3 activos · Backtesting 2020–2025</p>
+  </div>
+
+  <!-- TABLA COMPARATIVA KPIs -->
+  <div class="card p-5 mb-5 fade-in" style="animation-delay:0.05s">
+    <h3 class="font-semibold text-sm mb-4">Resumen Comparativo</h3>
+    <div class="overflow-auto scrollbar-thin">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-[var(--muted)] uppercase tracking-wider text-xs border-b border-[var(--border)]">
+            <th class="px-4 py-3 text-left">Activo</th>
+            <th class="px-4 py-3 text-right">Trades</th>
+            <th class="px-4 py-3 text-right">Win Rate</th>
+            <th class="px-4 py-3 text-right">Profit Factor</th>
+            <th class="px-4 py-3 text-right">Net %</th>
+            <th class="px-4 py-3 text-right">Avg PIPS</th>
+            <th class="px-4 py-3 text-right">Racha Max SL</th>
+            <th class="px-4 py-3 text-right">Racha Max TP</th>
+            <th class="px-4 py-3 text-right">WR Londres</th>
+            <th class="px-4 py-3 text-right">WR New York</th>
+          </tr>
+        </thead>
+        <tbody id="compTable" class="divide-y divide-[var(--border)]"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- GRAFICOS COMPARATIVOS -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.1s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Activo</h3>
+      <canvas id="wrCompChart" style="max-height:220px"></canvas>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Profit Factor por Activo</h3>
+      <canvas id="pfCompChart" style="max-height:220px"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.15s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Curvas de Equity Comparadas</h3>
+      <canvas id="equityCompChart" style="max-height:240px"></canvas>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Sesión</h3>
+      <canvas id="sessionCompChart" style="max-height:240px"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 fade-in" style="animation-delay:0.2s">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">P&L Mensual — Los 3 Activos</h3>
+      <canvas id="monthlyCompChart" style="max-height:240px"></canvas>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Win Rate por Día de Semana</h3>
+      <canvas id="dayCompChart" style="max-height:240px"></canvas>
+    </div>
+  </div>
+
+  <!-- RACHAS COMPARADAS -->
+  <div class="card p-5 mb-4 fade-in" style="animation-delay:0.25s">
+    <h3 class="font-semibold text-sm mb-4">Rachas Máximas Comparadas</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="streakCards"></div>
+  </div>
+
+  <!-- MEJORES HORAS POR ACTIVO -->
+  <div class="card p-5 mb-6 fade-in" style="animation-delay:0.3s">
+    <h3 class="font-semibold text-sm mb-4">Mejores Franjas Horarias por Activo (UTC-3)</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="hourCards"></div>
+  </div>
+
+  <div class="text-center text-xs text-[var(--muted)] py-4 mono">
+    ARM Backtesting Dashboard · Comparativa Multi Activo · <span id="footerUpdated">—</span>
+  </div>
+</div>
+
+<script>
+const CONFIG_KEY = 'arm_dashboard_script_url';
+let SCRIPT_URL   = localStorage.getItem(CONFIG_KEY) || '';
+const charts     = {};
+let ALL_DATA     = { EURUSD:[], US100:[], XAUUSD:[] };
+
+const ASSETS = {
+  EURUSD: { label:'EUR/USD', color:'#00d4aa', bg:'rgba(0,212,170,0.15)' },
+  US100:  { label:'US100',   color:'#ffc14d', bg:'rgba(255,193,77,0.15)' },
+  XAUUSD: { label:'XAU/USD', color:'#f87171', bg:'rgba(248,113,113,0.15)' }
+};
+
+function openConfig() {
+  document.getElementById('scriptUrlInput').value = SCRIPT_URL;
+  document.getElementById('configModal').classList.add('open');
+}
+function closeConfig() { document.getElementById('configModal').classList.remove('open'); }
+function saveConfig() {
+  const url = document.getElementById('scriptUrlInput').value.trim();
+  if (!url) return alert('Pegá la URL');
+  SCRIPT_URL = url;
+  localStorage.setItem(CONFIG_KEY, url);
+  closeConfig();
+  loadAll();
+}
+
+async function fetchAsset(sheet) {
+  const res  = await fetch(SCRIPT_URL + '?sheet=' + sheet);
+  const json = await res.json();
+  return (json.data || []).map(r => ({
+    fecha:  r['FECHA'],
+    dia:    r['DIA'],
+    trade:  r['TRADE'],
+    sesion: r['SESION QUE TESTEA'],
+    tpsl:   r['TP/SL'],
+    pips:   parseFloat(r['PIPS']||0),
+    pct:    parseFloat(r['%']||0),
+    hora:   r['hora'],
+    year:   r['FECHA'] ? parseInt(r['FECHA'].slice(0,4)) : null,
+    month:  r['FECHA'] ? parseInt(r['FECHA'].slice(5,7)) : null
+  }));
+}
+
+async function loadAll() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  if (!SCRIPT_URL) { document.getElementById('loadingOverlay').classList.add('hidden'); openConfig(); return; }
+  try {
+    document.getElementById('loadingMsg').textContent = 'Cargando EUR/USD...';
+    ALL_DATA.EURUSD = await fetchAsset('EURUSD');
+    document.getElementById('loadingMsg').textContent = 'Cargando US100...';
+    ALL_DATA.US100  = await fetchAsset('US100');
+    document.getElementById('loadingMsg').textContent = 'Cargando XAU/USD...';
+    ALL_DATA.XAUUSD = await fetchAsset('XAUUSD');
+    document.getElementById('navUpdate').textContent  = 'Actualizado: ' + new Date().toLocaleTimeString('es-AR');
+    document.getElementById('footerUpdated').textContent = new Date().toLocaleString('es-AR');
+    renderAll();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  } catch(err) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    alert('Error al cargar datos: ' + err.message);
+  }
+}
+
+function computeStats(data) {
+  const n    = data.length;
+  const tp   = data.filter(t=>t.tpsl==='TP').length;
+  const sl   = data.filter(t=>t.tpsl==='SL').length;
+  const wr   = n ? tp/n*100 : 0;
+  const gain = data.filter(t=>t.tpsl==='TP').reduce((s,t)=>s+t.pct,0);
+  const loss = Math.abs(data.filter(t=>t.tpsl==='SL').reduce((s,t)=>s+t.pct,0));
+  const pf   = loss>0 ? gain/loss : 0;
+  const net  = data.reduce((s,t)=>s+t.pct,0);
+  const avgPips = n ? data.reduce((s,t)=>s+t.pips,0)/n : 0;
+  const lon  = data.filter(t=>t.sesion==='LONDRES');
+  const ny   = data.filter(t=>t.sesion==='NY');
+  const wrLon= lon.length ? lon.filter(t=>t.tpsl==='TP').length/lon.length*100 : 0;
+  const wrNy = ny.length  ? ny.filter(t=>t.tpsl==='TP').length/ny.length*100   : 0;
+  let maxSL=0,maxTP=0,curSL=0,curTP=0;
+  for(const t of data) {
+    if(t.tpsl==='SL'){curSL++;curTP=0;maxSL=Math.max(maxSL,curSL);}
+    else{curTP++;curSL=0;maxTP=Math.max(maxTP,curTP);}
+  }
+  return {n,tp,sl,wr,pf,net,avgPips,wrLon,wrNy,maxSL,maxTP};
+}
+
+function renderAll() {
+  const stats = {};
+  for (const [key, data] of Object.entries(ALL_DATA)) stats[key] = computeStats(data);
+  renderTable(stats);
+  renderWRComp(stats);
+  renderPFComp(stats);
+  renderEquityComp();
+  renderSessionComp(stats);
+  renderMonthlyComp();
+  renderDayComp();
+  renderStreakCards(stats);
+  renderHourCards();
+}
+
+function renderTable(stats) {
+  document.getElementById('compTable').innerHTML = Object.entries(stats).map(([key,s]) => {
+    const a = ASSETS[key];
+    return `<tr class="hover:bg-white hover:bg-opacity-5">
+      <td style="padding:12px 16px"><span style="font-weight:700;color:${a.color};font-family:'Space Mono',monospace">${a.label}</span></td>
+      <td style="padding:12px 16px;text-align:right;font-family:'Space Mono',monospace">${s.n}</td>
+      <td style="padding:12px 16px;text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${s.wr>=50?'var(--accent)':s.wr>=45?'var(--accent3)':'var(--sl)'}">${s.wr.toFixed(1)}%</td>
+      <td style="padding:12px 16px;text-align:right;font-family:'Space Mono',monospace;font-weight:700;color:${s.pf>=1.5?'var(--accent)':s.pf>=1?'var(--accent3)':'var(--sl)'}">${s.pf.toFixed(2)}</td>
+      <td style="padding:12px 16px;text-align:right;font-family:'Space Mono',monospace;color:${s.net>=0?'var(--accent)':'var(--sl)'}">${(s.net*100).toFixed(2)}%</td>
+      <td style="padding:12px 16px;text-align:right;font-family:'Space Mono',monospace">${s.avgPips.toFixed(1)}</td>
+      <td style="padding:12px 16px;text-align:right;color:var(--sl);font-weight:700">${s.maxSL}</td>
+      <td style="padding:12px 16px;text-align:right;color:var(--accent);font-weight:700">${s.maxTP}</td>
+      <td style="padding:12px 16px;text-align:right">${s.wrLon.toFixed(1)}%</td>
+      <td style="padding:12px 16px;text-align:right">${s.wrNy.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderWRComp(stats) {
+  const keys   = Object.keys(stats);
+  const labels = keys.map(k=>ASSETS[k].label);
+  const wrs    = keys.map(k=>parseFloat(stats[k].wr.toFixed(1)));
+  mkChart('wrCompChart','bar',{
+    labels,
+    datasets:[{label:'Win Rate %',data:wrs,
+      backgroundColor:keys.map(k=>ASSETS[k].bg),
+      borderColor:keys.map(k=>ASSETS[k].color),
+      borderWidth:2,borderRadius:8,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{min:0,max:70,ticks:{callback:v=>v+'%',color:'#64748b',font:{size:10}}}}});
+}
+
+function renderPFComp(stats) {
+  const keys   = Object.keys(stats);
+  const labels = keys.map(k=>ASSETS[k].label);
+  const pfs    = keys.map(k=>parseFloat(stats[k].pf.toFixed(2)));
+  mkChart('pfCompChart','bar',{
+    labels,
+    datasets:[{label:'Profit Factor',data:pfs,
+      backgroundColor:keys.map(k=>ASSETS[k].bg),
+      borderColor:keys.map(k=>ASSETS[k].color),
+      borderWidth:2,borderRadius:8,borderSkipped:false}]
+  },{plugins:{legend:{display:false}},scales:{y:{ticks:{color:'#64748b',font:{size:10}}}}});
+}
+
+function renderEquityComp() {
+  const datasets = Object.entries(ALL_DATA).map(([key,data])=>{
+    let r=0;
+    const cum = data.map(t=>{r+=t.pct;return parseFloat((r*100).toFixed(2));});
+    return {
+      label:ASSETS[key].label,
+      data:cum,
+      borderColor:ASSETS[key].color,
+      backgroundColor:'transparent',
+      tension:0.35,pointRadius:0,borderWidth:2
+    };
+  });
+  const maxLen = Math.max(...Object.values(ALL_DATA).map(d=>d.length));
+  mkChart('equityCompChart','line',{
+    labels:Array.from({length:maxLen},(_,i)=>i+1),
+    datasets
+  },{
+    plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+    scales:{
+      x:{ticks:{display:false},grid:{display:false}},
+      y:{ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}}
+    }
+  });
+}
+
+function renderSessionComp(stats) {
+  const keys = Object.keys(stats);
+  mkChart('sessionCompChart','bar',{
+    labels:['Londres','New York'],
+    datasets:keys.map(k=>({
+      label:ASSETS[k].label,
+      data:[parseFloat(stats[k].wrLon.toFixed(1)),parseFloat(stats[k].wrNy.toFixed(1))],
+      backgroundColor:ASSETS[k].bg,
+      borderColor:ASSETS[k].color,
+      borderWidth:2,borderRadius:6,borderSkipped:false
+    }))
+  },{
+    plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+    scales:{y:{min:0,max:70,ticks:{callback:v=>v+'%',color:'#64748b',font:{size:10}}}}
+  });
+}
+
+function renderMonthlyComp() {
+  const mNames = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const allKeys = new Set();
+  const maps = {};
+  for (const [key,data] of Object.entries(ALL_DATA)) {
+    maps[key] = {};
+    for (const t of data) {
+      const k = t.fecha ? t.fecha.slice(0,7) : null;
+      if (!k) continue;
+      allKeys.add(k);
+      if (!maps[key][k]) maps[key][k] = 0;
+      maps[key][k] += t.pct;
+    }
+  }
+  const sortedKeys = [...allKeys].sort();
+  const labels = sortedKeys.map(k=>{const[y,m]=k.split('-');return mNames[parseInt(m)]+"'"+y.slice(2);});
+  mkChart('monthlyCompChart','bar',{
+    labels,
+    datasets:Object.entries(maps).map(([key,map])=>({
+      label:ASSETS[key].label,
+      data:sortedKeys.map(k=>parseFloat(((map[k]||0)*100).toFixed(2))),
+      backgroundColor:ASSETS[key].bg,
+      borderColor:ASSETS[key].color,
+      borderWidth:1.5,borderRadius:4,borderSkipped:false
+    }))
+  },{
+    plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}}},
+    scales:{y:{ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}},x:{ticks:{color:'#64748b',font:{size:9}}}}
+  });
+}
+
+function renderDayComp() {
+  const days = ['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES'];
+  const dLabels = ['Lun','Mar','Mié','Jue','Vie'];
+  mkChart('dayCompChart','bar',{
+    labels:dLabels,
+    datasets:Object.entries(ALL_DATA).map(([key,data])=>({
+      label:ASSETS[key].label,
+      data:days.map(d=>{
+        const dt=data.filter(t=>t.dia===d);
+        const tw=dt.filter(t=>t.tpsl==='TP').length;
+        return dt.length ? parseFloat((tw/dt.length*100).toFixed(1)) : 0;
+      }),
+      backgroundColor:ASSETS[key].bg,
+      borderColor:ASSETS[key].color,
+      borderWidth:1.5,borderRadius:5,borderSkipped:false
+    }))
+  },{
+    plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+    scales:{y:{min:0,max:70,ticks:{callback:v=>v+'%',color:'#64748b',font:{size:10}}}}
+  });
+}
+
+function renderStreakCards(stats) {
+  document.getElementById('streakCards').innerHTML = Object.entries(stats).map(([key,s])=>{
+    const a = ASSETS[key];
+    return `<div class="rounded-xl p-4 border" style="border-color:${a.color}22;background:${a.bg}">
+      <div class="flex items-center gap-2 mb-3">
+        <span style="width:10px;height:10px;border-radius:50%;background:${a.color};display:inline-block"></span>
+        <span style="font-weight:700;font-family:'Space Mono',monospace;color:${a.color}">${a.label}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-lg p-3" style="background:rgba(255,77,109,0.08);border:1px solid rgba(255,77,109,0.2)">
+          <div class="text-xs text-[var(--muted)] mb-1">Peor racha SL</div>
+          <div class="mono font-bold text-2xl" style="color:var(--sl)">${s.maxSL}</div>
+        </div>
+        <div class="rounded-lg p-3" style="background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.2)">
+          <div class="text-xs text-[var(--muted)] mb-1">Mejor racha TP</div>
+          <div class="mono font-bold text-2xl" style="color:var(--accent)">${s.maxTP}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderHourCards() {
+  document.getElementById('hourCards').innerHTML = Object.entries(ALL_DATA).map(([key,data])=>{
+    const a = ASSETS[key];
+    const hourMap = {};
+    for (const t of data) {
+      if (t.hora===null||t.hora===undefined) continue;
+      if (!hourMap[t.hora]) hourMap[t.hora]={tp:0,tot:0};
+      hourMap[t.hora].tot++;
+      if (t.tpsl==='TP') hourMap[t.hora].tp++;
+    }
+    const hours = Object.entries(hourMap)
+      .filter(([h,v])=>v.tot>=3)
+      .map(([h,v])=>({hora:parseInt(h), wr:v.tp/v.tot*100, tot:v.tot}))
+      .sort((a,b)=>b.wr-a.wr);
+    const best3  = hours.slice(0,3);
+    const worst3 = hours.slice().sort((a,b)=>a.wr-b.wr).slice(0,3);
+    return `<div class="rounded-xl p-4 border" style="border-color:${a.color}22;background:${a.bg}">
+      <div class="flex items-center gap-2 mb-3">
+        <span style="width:10px;height:10px;border-radius:50%;background:${a.color};display:inline-block"></span>
+        <span style="font-weight:700;font-family:'Space Mono',monospace;color:${a.color}">${a.label}</span>
+      </div>
+      <div class="mb-2">
+        <div class="text-xs text-[var(--muted)] uppercase tracking-wider mb-1">✅ Mejores horas</div>
+        ${best3.map(h=>`<div class="flex justify-between text-xs py-1 border-b border-[var(--border)]">
+          <span class="mono">${h.hora}:00 UTC-3</span>
+          <span style="color:var(--accent);font-weight:700">${h.wr.toFixed(0)}% WR <span class="text-[var(--muted)]">(${h.tot} ops)</span></span>
+        </div>`).join('')}
+      </div>
+      <div class="mt-2">
+        <div class="text-xs text-[var(--muted)] uppercase tracking-wider mb-1">⚠️ Peores horas</div>
+        ${worst3.map(h=>`<div class="flex justify-between text-xs py-1 border-b border-[var(--border)]">
+          <span class="mono">${h.hora}:00 UTC-3</span>
+          <span style="color:var(--sl);font-weight:700">${h.wr.toFixed(0)}% WR <span class="text-[var(--muted)]">(${h.tot} ops)</span></span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Chart helper
+const baseOpts={responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},tooltip:{backgroundColor:'#1e2230',titleColor:'#e2e8f0',bodyColor:'#94a3b8',borderColor:'#374151',borderWidth:1}},scales:{x:{ticks:{color:'#64748b',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#64748b',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}}}};
+function deepMerge(a,b){const r={...a};for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k]))r[k]=deepMerge(a[k]||{},b[k]);else r[k]=b[k];}return r;}
+function mkChart(id,type,data,opts={}){if(charts[id]){charts[id].destroy();delete charts[id];}const ctx=document.getElementById(id);if(!ctx)return;charts[id]=new Chart(ctx.getContext('2d'),{type,data,options:deepMerge(baseOpts,opts)});}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  if (!SCRIPT_URL) { document.getElementById('loadingOverlay').classList.add('hidden'); openConfig(); }
+  else loadAll();
+});
+</script>
+</body>
+</html>
