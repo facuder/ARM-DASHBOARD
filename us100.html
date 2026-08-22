@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ARM US100 — Backtesting Dashboard</title>
+<title>ARM EURUSD 5M — Backtesting Dashboard</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -90,7 +90,7 @@
       <span style="font-family:'Space Mono',monospace;font-weight:700;font-size:14px;color:#e2e8f0">ARM <span style="color:#00d4aa">Backtest</span></span>
       <div style="display:flex;gap:4px;flex-wrap:wrap;">
         <a href="index.html"       class="nav-btn" id="nav-eurusd">EUR/USD</a>
-        <a href="us100.html"       class="nav-btn" id="nav-us100" class="nav-btn active">US100</a>
+        <a href="us100.html"       class="nav-btn" id="nav-us100" class="nav-btn active">EUR/USD 5M</a>
         <a href="xauusd.html"      class="nav-btn" id="nav-xauusd">XAU/USD</a>
         <a href="comparativa.html" class="nav-btn" id="nav-comp">📊 Comparativa</a>
       </div>
@@ -142,7 +142,7 @@
           <span class="text-xs text-[var(--muted)]" id="lastUpdate">—</span>
         </div>
       </div>
-      <h1 class="text-3xl font-bold mono tracking-tight">US100 <span class="text-[var(--muted)] font-normal">1M</span></h1>
+      <h1 class="text-3xl font-bold mono tracking-tight">EUR/USD <span class="text-[var(--muted)] font-normal">5M</span></h1>
       <p class="text-[var(--muted)] text-sm mt-1" id="headerSubtitle">Cargando datos...</p>
     </div>
     <div class="flex items-center gap-3 flex-wrap">
@@ -561,7 +561,7 @@ async function fetchData() {
   if (!SCRIPT_URL) throw new Error('URL no configurada. Hacé clic en ⚙️ Config para ingresar la URL de tu Apps Script.');
 
   document.getElementById('loadingStatus').textContent = 'Conectando con Google Sheets...';
-  const res = await fetch(SCRIPT_URL + '?sheet=US100');
+  const res = await fetch(SCRIPT_URL + '?sheet=EURUSD5M');
   if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
   const json = await res.json();
   if (!json.data || !Array.isArray(json.data)) throw new Error('Formato de datos inesperado. Revisá el script de Google Sheets.');
